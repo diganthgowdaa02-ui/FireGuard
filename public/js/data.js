@@ -1,31 +1,42 @@
 /**
- * FireGuard — Data Layer (Vercel version)
- * Hits the Vercel serverless proxy at /api/sensors
- * which forwards to your ESP32 via the ESP32_URL env variable.
+ * FireGuard — Data Layer
+ *
+ * Reads directly from Firebase Realtime Database REST API.
+ * No Vercel proxy needed — browser fetches Firebase directly.
+ * This works from anywhere as long as Firebase rules allow .read = true
  */
 
 const CONFIG = {
-  API_BASE_URL:  '/api',      // Vercel serverless route — no hardcoded IP needed
+  // Your Firebase Realtime Database URL
+  FIREBASE_URL:  'https://fireguard-dfb77-default-rtdb.firebaseio.com',
   POLL_INTERVAL: 2000,
 };
 
 async function fetchSensorData() {
   try {
-    const res = await fetch(`${CONFIG.API_BASE_URL}/sensors`, {
+    // Firebase REST API: append .json to any path to read it
+    const url = `${CONFIG.FIREBASE_URL}/fireguard/sensors.json`;
+
+    const res = await fetch(url, {
       signal: AbortSignal.timeout(6000),
+      cache: 'no-store',
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    if (!res.ok) throw new Error(`Firebase HTTP ${res.status}`);
+
     const data = await res.json();
 
-    // Hide demo banner if real ESP32 data is coming through
-    if (!data.mock) {
-      const banner = document.getElementById('demoBanner');
-      if (banner) banner.style.display = 'none';
+    // Firebase returns null if path doesn't exist yet
+    if (!data) {
+      console.warn('[FireGuard] Firebase path empty — ESP32 not pushed yet');
+      return null;
     }
 
+    console.log('[FireGuard] Got data:', data);
     return data;
+
   } catch (err) {
-    console.warn('[FireGuard] Fetch error:', err.message);
+    console.warn('[FireGuard] Firebase fetch error:', err.message);
     return null;
   }
 }
