@@ -134,11 +134,30 @@ function update(data) {
   }
 
   // ── Device card ──
-  $('deviceBig').textContent = rssi + ' dBm';
-  $('deviceBig').className   = 'card-big ' + (rssi > -70 ? 'green' : rssi > -85 ? 'yellow' : 'red');
-  set('deviceDesc', `Heap: ${heap} KB · Uptime: ${Math.floor(u/60)}m`);
-  $('deviceBadge').textContent = 'ONLINE';
-  $('deviceBadge').className   = 'card-badge safe';
+  const timeSincePush = data.timestamp
+    ? Math.floor(Date.now() / 1000) - data.timestamp
+    : 999;
+  const isLive = timeSincePush < 10;  // pushed within last 10 seconds
+
+  const cDevice = $('cardDevice');
+  if (isLive) {
+    cDevice.className = 'card live';
+    $('deviceBig').textContent = rssi + ' dBm';
+    $('deviceBig').className   = 'card-big ' + (rssi > -70 ? 'green' : rssi > -85 ? 'yellow' : 'red');
+    $('deviceBadge').textContent = 'LIVE';
+    $('deviceBadge').className   = 'card-badge live';
+    set('deviceDesc', `Heap: ${heap} KB · Last push: ${timeSincePush}s ago`);
+  } else {
+    cDevice.className = 'card';
+    $('deviceBig').textContent = 'STALE';
+    $('deviceBig').className   = 'card-big yellow';
+    $('deviceBadge').textContent = 'DELAYED';
+    $('deviceBadge').className   = 'card-badge warning';
+    set('deviceDesc', `Last seen: ${timeSincePush}s ago · Check device`);
+  }
+
+  // ── Live indicator dot in nav ──
+  updateLiveBar(isLive, timeSincePush, uptime, rssi, heap);
 
   // ── Log new events ──
   if (flame && !state.prevFlame) {
@@ -156,7 +175,36 @@ function update(data) {
   state.prevPump   = pump;
 }
 
-// ── Offline ───────────────────────────────────────────────────────────────────
+// ── Live connection bar ───────────────────────────────────────────────────────
+function updateLiveBar(isLive, age, uptime, rssi, heap) {
+  const bar = $('liveBar');
+  if (!bar) return;
+
+  if (isLive) {
+    bar.className = 'live-bar live';
+    const u = uptime;
+    bar.innerHTML = `
+      <span class="live-dot-anim"></span>
+      <span class="live-text">ESP32 Connected & Live</span>
+      <span class="live-sep">·</span>
+      <span>Updated ${age}s ago</span>
+      <span class="live-sep">·</span>
+      <span>Uptime: ${Math.floor(u/3600)}h ${Math.floor((u%3600)/60)}m ${u%60}s</span>
+      <span class="live-sep">·</span>
+      <span>WiFi: ${rssi} dBm</span>
+      <span class="live-sep">·</span>
+      <span>Heap: ${heap} KB</span>
+    `;
+  } else {
+    bar.className = 'live-bar offline';
+    bar.innerHTML = `
+      <span class="live-dot-anim offline"></span>
+      <span class="live-text">ESP32 Not Responding</span>
+      <span class="live-sep">·</span>
+      <span>Last seen ${age}s ago — check device power and WiFi</span>
+    `;
+  }
+}
 function setOffline() {
   $('statusCard').className = 'status-card';
   set('statusEmoji', '⚠️');
@@ -166,6 +214,21 @@ function setOffline() {
   set('pillText', 'Offline');
   $('deviceBadge').textContent = 'OFFLINE';
   $('deviceBadge').className   = 'card-badge danger';
+  $('cardDevice').className    = 'card';
+  set('deviceBig', 'OFFLINE');
+  $('deviceBig').className = 'card-big red';
+  set('deviceDesc', 'No data received from ESP32');
+
+  const bar = $('liveBar');
+  if (bar) {
+    bar.className = 'live-bar offline';
+    bar.innerHTML = `
+      <span class="live-dot-anim offline"></span>
+      <span class="live-text">ESP32 Offline</span>
+      <span class="live-sep">·</span>
+      <span>No data received — check device power and WiFi</span>
+    `;
+  }
 }
 
 // ── Log ───────────────────────────────────────────────────────────────────────
