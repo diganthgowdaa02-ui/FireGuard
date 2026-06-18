@@ -13,7 +13,13 @@ export default async function handler(req, res) {
   if (statusUrl) {
     try {
       const { default: fetch } = await import('node-fetch');
-      const upstream = await fetch(statusUrl, { signal: AbortSignal.timeout(5000) });
+      const upstream = await fetch(statusUrl, { 
+        signal: AbortSignal.timeout(5000),
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+          'User-Agent': 'FireGuard-Server/1.0',
+        },
+      });
       const data = await upstream.json();
       return res.status(200).json(data);
     } catch (err) {
