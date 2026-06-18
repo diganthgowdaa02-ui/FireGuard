@@ -38,9 +38,11 @@ const char* WIFI_PASSWORD = "diganth@098";
 #define LED_PIN           2
 
 // ── Relay polarity ────────────────────────────────────────────────────────────
-// Most relay modules are ACTIVE LOW — change to HIGH/LOW if yours is active HIGH
-#define RELAY_ON          LOW    // Signal that energises the relay coil
-#define RELAY_OFF         HIGH   // Signal that de-energises the relay coil
+// Standard blue relay modules are ACTIVE LOW:
+//   IN = LOW  → relay ON  (coil energised, NO contact closes, motor runs)
+//   IN = HIGH → relay OFF (coil off,       NO contact open,  motor stops)
+#define RELAY_ON          LOW
+#define RELAY_OFF         HIGH
 
 // ── Cooldown ──────────────────────────────────────────────────────────────────
 #define COOLDOWN_SEC      10     // Seconds motor keeps running after flame gone
@@ -58,20 +60,27 @@ int           flameEventCount = 0;
 
 // ─────────────────────────────────────────────────────────────────────────────
 void setup() {
-  Serial.begin(115200);
-  Serial.println("\n[FireGuard] Booting...");
+  // ── Kill the relay FIRST — before Serial, before WiFi, before everything ──
+  // GPIO 26 floats LOW on boot which triggers an active-low relay.
+  // Pull it HIGH immediately using the internal pull-up, then set it as OUTPUT.
+  pinMode(RELAY_PIN, INPUT_PULLUP);     // internal pull-up drives pin HIGH → relay OFF
+  delay(10);                            // give the pull-up time to assert
+  pinMode(RELAY_PIN, OUTPUT);           // now switch to output...
+  digitalWrite(RELAY_PIN, RELAY_OFF);   // ...and hold it HIGH firmly
 
-  // ── Set relay OFF before anything else ──
-  // Do this BEFORE pinMode so the pin is never in a floating state
-  digitalWrite(RELAY_PIN, RELAY_OFF);
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, RELAY_OFF);   // write again after pinMode to be sure
+  Serial.begin(115200);
+  Serial.println("\n[FireGuard] Booting — relay forced OFF at pin level.");
 
   pinMode(FLAME_PIN, INPUT);
   pinMode(LED_PIN,   OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
-  Serial.println("[FireGuard] Relay initialised OFF. Motor is stopped.");
+  // Confirm relay is off
+  Serial.printf("[FireGuard] RELAY_PIN %d = %s (relay is OFF)\n",
+                RELAY_PIN, digitalRead(RELAY_PIN) == HIGH ? "HIGH" : "LOW");
+
+  motorRunning = false;
+  inCooldown   = false;
 
   connectWiFi();
 
@@ -97,8 +106,22 @@ void loop() {
 }
 
 // ── Core logic ────────────────────────────────────────────────────────────────
+// Debounce: flame must read consistently for 3 checks (~150ms) before acting.
+// This prevents IR noise or light flicker from falsely triggering the relay.
+static int  flameConfirmCount = 0;
+static bool confirmedFlame    = false;
+
 void checkFlameAndRelay() {
-  bool flame = (digitalRead(FLAME_PIN) == LOW);   // active-low sensor
+  bool rawFlame = (digitalRead(FLAME_PIN) == LOW);
+
+  // Simple debounce — require 3 consecutive LOW reads before confirming flame
+  if (rawFlame) {
+    if (flameConfirmCount < 3) flameConfirmCount++;
+  } else {
+    if (flameConfirmCount > 0) flameConfirmCount--;
+  }
+
+  bool flame = (flameConfirmCount >= 3);   // confirmed flame
 
   // ── Rising edge: flame just appeared ──
   if (flame && !flameDetected) {
