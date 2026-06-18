@@ -1,57 +1,58 @@
 /**
  * FireGuard Data Layer
- * Handles communication with the ESP32 API.
- * Replace API_BASE_URL with your ESP32's IP address.
- * The ESP32 should expose: GET /api/sensors
+ * 
+ * ESP32 exposes: GET /api/sensors
+ * Response: { flame, pump_active, cooldown_left, flame_events, uptime, heap, rssi, alert_level, timestamp }
+ * 
+ * Set USE_MOCK_DATA: false and update API_BASE_URL with your ESP32's IP.
  */
 
 const CONFIG = {
-  API_BASE_URL: 'http://192.168.1.105/api',
-  POLL_INTERVAL: 3000,          // ms between sensor polls
-  TEMP_WARN: 50,                // °C warning threshold
-  TEMP_DANGER: 60,              // °C danger threshold
-  SMOKE_WARN: 200,              // ppm warning threshold
-  SMOKE_DANGER: 300,            // ppm danger threshold
-  USE_MOCK_DATA: true,          // set false when ESP32 is connected
+  API_BASE_URL:  'http://192.168.1.105/api',
+  POLL_INTERVAL: 2000,    // ms — how often to poll ESP32
+  USE_MOCK_DATA: true,    // flip to false when ESP32 is connected
 };
 
-// ── Mock data simulation ──────────────────────────────────────────────────────
-// Simulates realistic sensor fluctuation when USE_MOCK_DATA is true.
+// ── Mock Simulation ───────────────────────────────────────────────────────────
 const MockSensor = (() => {
-  let temp = 27, smoke = 85, humidity = 55, t = 0;
-  // Occasionally simulate a fire event for demo purposes
-  let fireEventCountdown = 120;
+  let t = 0;
+  let fireCountdown = 80;    // triggers a demo fire event every ~80 ticks
+  let pumpCooldown  = 0;
+  let flameEvents   = 0;
+  let lastFlameAt   = 0;
 
   function next() {
     t++;
-    fireEventCountdown--;
+    fireCountdown--;
 
-    // Simulate a brief fire event every ~2 minutes
-    if (fireEventCountdown <= 0) {
-      fireEventCountdown = 200 + Math.floor(Math.random() * 100);
+    const flame = fireCountdown > 0 && fireCountdown <= 12;
+
+    if (flame && fireCountdown === 12) {
+      flameEvents++;
+      lastFlameAt = t;
+    }
+    if (fireCountdown <= 0) {
+      fireCountdown = 80 + Math.floor(Math.random() * 60);
     }
 
-    const fireEvent = fireEventCountdown < 15;
+    // Pump stays on 10 ticks after flame gone
+    if (flame) pumpCooldown = 10;
+    else if (pumpCooldown > 0) pumpCooldown--;
 
-    temp = fireEvent
-      ? 65 + Math.random() * 15
-      : 24 + Math.sin(t * 0.05) * 4 + Math.random() * 2;
-
-    smoke = fireEvent
-      ? 400 + Math.random() * 200
-      : 60 + Math.sin(t * 0.03) * 20 + Math.random() * 15;
-
-    humidity = 45 + Math.sin(t * 0.02) * 10 + Math.random() * 3;
+    const pumpActive   = flame || pumpCooldown > 0;
+    const cooldownLeft = !flame && pumpCooldown > 0 ? pumpCooldown : 0;
 
     return {
-      temperature: parseFloat(temp.toFixed(1)),
-      smoke: Math.round(smoke),
-      humidity: parseFloat(humidity.toFixed(1)),
-      flame: fireEvent,
-      uptime: t * (CONFIG.POLL_INTERVAL / 1000),   // seconds
-      heap: Math.round(200 - t * 0.01),             // KB free heap
-      rssi: -55 - Math.floor(Math.random() * 15),   // WiFi signal
-      timestamp: new Date().toISOString(),
+      flame,
+      pump_active:    pumpActive,
+      cooldown_left:  cooldownLeft,
+      flame_events:   flameEvents,
+      alert_level:    flame ? 2 : (pumpActive ? 1 : 0),
+      uptime:         t * (CONFIG.POLL_INTERVAL / 1000),
+      heap:           200 - Math.floor(t * 0.01),
+      rssi:           -52 - Math.floor(Math.random() * 10),
+      last_flame_sec: lastFlameAt > 0 ? (t - lastFlameAt) : null,
+      timestamp:      Date.now(),
     };
   }
 
@@ -61,8 +62,7 @@ const MockSensor = (() => {
 // ── Real API fetch ─────────────────────────────────────────────────────────────
 async function fetchSensorData() {
   if (CONFIG.USE_MOCK_DATA) {
-    // Simulate async delay
-    return new Promise(resolve => setTimeout(() => resolve(MockSensor.next()), 150));
+    return new Promise(resolve => setTimeout(() => resolve(MockSensor.next()), 120));
   }
 
   try {
@@ -72,22 +72,7 @@ async function fetchSensorData() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
-    console.warn('[FireGuard] API fetch failed:', err.message);
+    console.warn('[FireGuard] API error:', err.message);
     return null;
   }
-}
-
-// ── Thresholds (user-configurable) ─────────────────────────────────────────────
-function getThresholds() {
-  return {
-    tempWarn: Number(localStorage.getItem('fg_tempThreshold') || CONFIG.TEMP_WARN),
-    tempDanger: Number(localStorage.getItem('fg_tempThreshold') || CONFIG.TEMP_DANGER),
-    smokeWarn: Number(localStorage.getItem('fg_smokeThreshold') || CONFIG.SMOKE_WARN),
-    smokeDanger: Number(localStorage.getItem('fg_smokeThreshold') || CONFIG.SMOKE_DANGER),
-  };
-}
-
-function saveThresholdConfig(temp, smoke) {
-  localStorage.setItem('fg_tempThreshold', temp);
-  localStorage.setItem('fg_smokeThreshold', smoke);
 }

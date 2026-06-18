@@ -1,0 +1,12 @@
+{
+  "name": "fireguard",
+  "version": "1.0.0",
+  "description": "FireGuard IoT Fire Detection Dashboard — ESP32 + IR Flame Sensor + Relay",
+  "private": true,
+  "engines": {
+    "node": "18.x"
+  },
+  "dependencies": {
+    "node-fetch": "3.3.2"
+  }
+}

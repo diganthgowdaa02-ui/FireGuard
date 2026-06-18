@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 </head>
 <body>
+
   <!-- Navigation -->
   <nav class="navbar" id="navbar">
     <div class="nav-container">
@@ -44,7 +45,13 @@
     </div>
   </nav>
 
-  <!-- Hero Section -->
+  <!-- Demo Mode Banner -->
+  <div class="demo-banner" id="demoBanner">
+    🎭 Demo Mode — Not connected to real ESP32. Set <code>ESP32_URL</code> in Vercel env vars to go live.
+    <button onclick="document.getElementById('demoBanner').style.display='none'">✕</button>
+  </div>
+
+  <!-- Hero -->
   <section class="hero" id="home">
     <div class="hero-bg">
       <div class="particle" style="--x:10%;--y:20%;--d:3s"></div>
@@ -62,8 +69,8 @@
         Protect What <span class="gradient-text">Matters Most</span>
       </h1>
       <p class="hero-subtitle">
-        Real-time fire and smoke detection powered by ESP32 sensors. 
-        Get instant alerts before disaster strikes.
+        Real-time fire detection powered by ESP32 + IR flame sensor.
+        Relay triggers water pump automatically when fire is detected.
       </p>
       <div class="hero-actions">
         <a href="#dashboard" class="btn btn-primary">View Dashboard</a>
@@ -113,32 +120,29 @@
     </div>
   </section>
 
-  <!-- Dashboard Section -->
+  <!-- Dashboard -->
   <section class="section" id="dashboard">
     <div class="container">
       <div class="section-header">
         <h2 class="section-title">Live Sensor Dashboard</h2>
-        <p class="section-subtitle">Real-time readings from your ESP32 sensors</p>
+        <p class="section-subtitle">Real-time readings from your ESP32</p>
         <div class="last-updated">Last updated: <span id="lastUpdated">--:--:--</span></div>
       </div>
 
-      <!-- System Status Banner -->
       <div class="status-banner safe" id="statusBanner">
         <div class="status-icon">✅</div>
         <div class="status-text">
           <strong id="bannerTitle">All Systems Normal</strong>
-          <span id="bannerMessage">No fire or smoke detected. All sensors operating normally.</span>
+          <span id="bannerMessage">No flame detected. Relay off. System monitoring.</span>
         </div>
         <button class="dismiss-btn" id="dismissBtn" style="display:none">✕</button>
       </div>
 
-      <!-- Sensor Cards -->
       <div class="sensor-grid two-col">
-
-        <!-- Flame Sensor -->
+        <!-- Flame Card -->
         <div class="sensor-card" id="cardFlame">
           <div class="card-header">
-            <div class="card-icon flame-icon">🔥</div>
+            <div class="card-icon">🔥</div>
             <div class="card-meta">
               <span class="card-title">IR Flame Sensor</span>
               <span class="card-status safe" id="flameStatus">No Flame</span>
@@ -151,12 +155,12 @@
           </div>
           <div class="flame-desc" id="flameDesc">No flame radiation detected by IR sensor</div>
           <div class="card-footer-stat">
-            <span>Total Events</span>
+            <span>Total Fire Events</span>
             <span class="stat-num" id="flameEvents">0</span>
           </div>
         </div>
 
-        <!-- Relay / Pump -->
+        <!-- Pump Card -->
         <div class="sensor-card" id="cardPump">
           <div class="card-header">
             <div class="card-icon">💧</div>
@@ -166,7 +170,7 @@
             </div>
           </div>
           <div class="card-value pump-value" id="pumpValue">OFF</div>
-          <div class="pump-indicator" id="pumpIndicator">
+          <div class="pump-indicator">
             <div class="pump-ring" id="pumpRing"></div>
             <div class="pump-icon-inner">💧</div>
           </div>
@@ -176,17 +180,16 @@
             <span class="stat-num" id="cooldownLeft">0s</span>
           </div>
         </div>
-
       </div>
     </div>
   </section>
 
-  <!-- Alert Log Section -->
+  <!-- Alert Log -->
   <section class="section section-dark" id="alerts">
     <div class="container">
       <div class="section-header">
         <h2 class="section-title">Alert History</h2>
-        <p class="section-subtitle">Log of all fire and smoke detection events</p>
+        <p class="section-subtitle">Log of all fire detection events</p>
         <button class="btn btn-sm btn-outline" id="clearAlertsBtn">Clear Log</button>
       </div>
       <div class="alert-log" id="alertLog">
@@ -198,7 +201,7 @@
     </div>
   </section>
 
-  <!-- Device Status Section -->
+  <!-- Device Status -->
   <section class="section" id="devices">
     <div class="container">
       <div class="section-header">
@@ -216,10 +219,7 @@
             <span class="device-badge online" id="esp32Status">ONLINE</span>
           </div>
           <div class="device-details">
-            <div class="detail-row">
-              <span>IP Address</span>
-              <code id="deviceIP">192.168.1.105</code>
-            </div>
+            <div class="detail-row"><span>IP Address</span><code id="deviceIP">--</code></div>
             <div class="detail-row">
               <span>WiFi Signal</span>
               <span class="signal-bars" id="wifiSignal">
@@ -229,18 +229,9 @@
                 <span class="bar"></span>
               </span>
             </div>
-            <div class="detail-row">
-              <span>Firmware</span>
-              <code>v2.1.4</code>
-            </div>
-            <div class="detail-row">
-              <span>Uptime</span>
-              <span id="deviceUptime">--</span>
-            </div>
-            <div class="detail-row">
-              <span>Free Heap</span>
-              <span id="freeHeap">-- KB</span>
-            </div>
+            <div class="detail-row"><span>Firmware</span><code>v2.1.4</code></div>
+            <div class="detail-row"><span>Uptime</span><span id="deviceUptime">--</span></div>
+            <div class="detail-row"><span>Free Heap</span><span id="freeHeap">-- KB</span></div>
           </div>
         </div>
 
@@ -248,8 +239,8 @@
           <div class="device-header">
             <div class="device-icon">🔬</div>
             <div>
-              <h3>Sensor Array</h3>
-              <span class="device-id">2 components active</span>
+              <h3>Components</h3>
+              <span class="device-id">2 active</span>
             </div>
             <span class="device-badge online">HEALTHY</span>
           </div>
@@ -262,12 +253,12 @@
             <div class="sensor-item">
               <span class="sensor-dot active"></span>
               <span>Relay Module (GPIO 26)</span>
-              <span class="sensor-ping active-label" id="buzzerState">STANDBY</span>
+              <span class="active-label" id="buzzerState">STANDBY</span>
             </div>
             <div class="sensor-item">
               <span class="sensor-dot active"></span>
-              <span>Water Pump (via Relay NO)</span>
-              <span class="sensor-ping active-label" id="pumpState">OFF</span>
+              <span>Water Pump (Relay NO)</span>
+              <span class="active-label" id="pumpState">OFF</span>
             </div>
           </div>
         </div>
@@ -277,29 +268,16 @@
             <div class="device-icon">⚙️</div>
             <div>
               <h3>API Configuration</h3>
-              <span class="device-id">Backend endpoint</span>
+              <span class="device-id">Vercel serverless proxy</span>
             </div>
           </div>
           <div class="device-details">
-            <div class="detail-row">
-              <span>API Base URL</span>
-              <code id="apiUrl">http://192.168.1.105/api</code>
-            </div>
-            <div class="detail-row">
-              <span>Poll Interval</span>
-              <code id="pollInterval">3s</code>
-            </div>
-            <div class="detail-row">
-              <span>Protocol</span>
-              <code>HTTP REST</code>
-            </div>
-            <div class="detail-row">
-              <span>Last Response</span>
-              <span id="lastResponse" class="text-green">200 OK</span>
-            </div>
+            <div class="detail-row"><span>Endpoint</span><code>/api/sensors</code></div>
+            <div class="detail-row"><span>Poll Interval</span><code id="pollInterval">2s</code></div>
+            <div class="detail-row"><span>ESP32 URL</span><code id="apiUrl">via ENV var</code></div>
+            <div class="detail-row"><span>Last Response</span><span id="lastResponse" class="text-green">200 OK</span></div>
           </div>
           <div class="config-actions">
-            <button class="btn btn-sm btn-outline" id="configBtn">Configure</button>
             <button class="btn btn-sm btn-primary" id="testConnectionBtn">Test Connection</button>
           </div>
         </div>
@@ -307,18 +285,18 @@
     </div>
   </section>
 
-  <!-- Notifications Section -->
+  <!-- Notifications -->
   <section class="section section-dark" id="notifications">
     <div class="container">
       <div class="section-header">
         <h2 class="section-title">Alert Notifications</h2>
-        <p class="section-subtitle">Configure how you get notified when fire is detected</p>
+        <p class="section-subtitle">Get notified the moment fire is detected</p>
       </div>
       <div class="notification-grid">
         <div class="notif-card">
           <div class="notif-icon">📧</div>
           <h3>Email Alerts</h3>
-          <p>Receive detailed reports and alerts directly to your inbox.</p>
+          <p>Receive instant alerts to your inbox when flame is detected.</p>
           <div class="notif-form">
             <input type="email" placeholder="your@email.com" id="emailInput" class="form-input" />
             <label class="toggle-label">
@@ -329,11 +307,10 @@
           </div>
           <button class="btn btn-primary btn-full" onclick="saveNotification('email')">Save Email</button>
         </div>
-
         <div class="notif-card">
           <div class="notif-icon">📱</div>
           <h3>SMS Alerts</h3>
-          <p>Get instant text messages when critical fire events are detected.</p>
+          <p>Get text messages when fire events are detected.</p>
           <div class="notif-form">
             <input type="tel" placeholder="+91 XXXXX XXXXX" id="phoneInput" class="form-input" />
             <label class="toggle-label">
@@ -344,22 +321,14 @@
           </div>
           <button class="btn btn-primary btn-full" onclick="saveNotification('sms')">Save Phone</button>
         </div>
-
         <div class="notif-card">
           <div class="notif-icon">🔔</div>
-          <h3>Alert Thresholds</h3>
-          <p>Customize at what sensor values you want to be notified.</p>
-          <div class="threshold-grid">
-            <div class="threshold-item">
-              <label>Temperature (°C)</label>
-              <input type="number" value="60" id="tempThreshold" class="form-input small" min="30" max="100" />
-            </div>
-            <div class="threshold-item">
-              <label>Smoke (ppm)</label>
-              <input type="number" value="300" id="smokeThreshold" class="form-input small" min="50" max="1000" />
-            </div>
+          <h3>Browser Notifications</h3>
+          <p>Enable push notifications directly in your browser.</p>
+          <div class="notif-form" style="margin-top:1rem">
+            <button class="btn btn-outline btn-full" id="enablePushBtn" onclick="enablePushNotifications()">Enable Notifications</button>
           </div>
-          <button class="btn btn-primary btn-full" onclick="saveThresholds()">Save Thresholds</button>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.75rem" id="pushStatus">Not enabled</p>
         </div>
       </div>
     </div>
@@ -370,65 +339,52 @@
     <div class="container">
       <div class="section-header">
         <h2 class="section-title">How It Works</h2>
-        <p class="section-subtitle">From sensor to alert in milliseconds</p>
+        <p class="section-subtitle">From sensor to extinguishment in milliseconds</p>
       </div>
       <div class="steps-grid">
         <div class="step-card">
           <div class="step-number">01</div>
           <div class="step-icon">🔥</div>
           <h3>Flame Detected</h3>
-          <p>The IR flame sensor monitors for infrared radiation emitted by open flames. Its digital output goes LOW when fire is detected.</p>
+          <p>IR flame sensor detects infrared radiation from open fire. Digital output goes LOW instantly.</p>
         </div>
         <div class="step-arrow">→</div>
         <div class="step-card">
           <div class="step-number">02</div>
           <div class="step-icon">⚡</div>
           <h3>ESP32 Reacts</h3>
-          <p>The ESP32 reads the flame sensor pin instantly. It triggers the relay output HIGH, activating the water pump within milliseconds.</p>
+          <p>ESP32 reads the pin and drives the relay HIGH — no cloud round-trip. Reaction is under 50ms.</p>
         </div>
         <div class="step-arrow">→</div>
         <div class="step-card">
           <div class="step-number">03</div>
           <div class="step-icon">💧</div>
           <h3>Pump Activates</h3>
-          <p>The relay closes its circuit, powering the water pump. Water flows until the flame is gone plus a 10-second cooldown period.</p>
+          <p>Relay closes, water pump runs. Continues for 10s after flame gone to fully extinguish.</p>
         </div>
         <div class="step-arrow">→</div>
         <div class="step-card">
           <div class="step-number">04</div>
-          <div class="step-icon">📡</div>
-          <h3>Dashboard Updated</h3>
-          <p>ESP32 sends live status over WiFi to this dashboard. Every event is logged with a timestamp for your records.</p>
+          <div class="step-icon">🌐</div>
+          <h3>Dashboard Updates</h3>
+          <p>ESP32 sends status to Vercel API proxy every 2s. Dashboard updates live from anywhere in the world.</p>
         </div>
       </div>
 
       <div class="architecture-box">
         <h3>System Architecture</h3>
         <div class="arch-diagram">
-          <div class="arch-node">
-            <div class="arch-icon">🔥</div>
-            <span>IR Flame Sensor</span>
-          </div>
+          <div class="arch-node"><div class="arch-icon">🔥</div><span>IR Flame Sensor</span></div>
           <div class="arch-line"></div>
-          <div class="arch-node highlight">
-            <div class="arch-icon">⚡</div>
-            <span>ESP32</span>
-          </div>
+          <div class="arch-node highlight"><div class="arch-icon">⚡</div><span>ESP32</span></div>
           <div class="arch-line"></div>
-          <div class="arch-node">
-            <div class="arch-icon">🔌</div>
-            <span>Relay Module</span>
-          </div>
+          <div class="arch-node"><div class="arch-icon">🔌</div><span>Relay</span></div>
           <div class="arch-line"></div>
-          <div class="arch-node highlight">
-            <div class="arch-icon">💧</div>
-            <span>Water Pump</span>
-          </div>
+          <div class="arch-node highlight"><div class="arch-icon">💧</div><span>Water Pump</span></div>
           <div class="arch-line"></div>
-          <div class="arch-node">
-            <div class="arch-icon">🖥️</div>
-            <span>Dashboard</span>
-          </div>
+          <div class="arch-node"><div class="arch-icon">☁️</div><span>Vercel API</span></div>
+          <div class="arch-line"></div>
+          <div class="arch-node highlight"><div class="arch-icon">🖥️</div><span>Dashboard</span></div>
         </div>
       </div>
     </div>
@@ -442,9 +398,9 @@
           <div class="nav-brand">
             <div class="brand-icon">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2C8 6 6 9 6 12a6 6 0 0012 0c0-3-2-6-6-10z" fill="url(#fireGrad2)"/>
+                <path d="M12 2C8 6 6 9 6 12a6 6 0 0012 0c0-3-2-6-6-10z" fill="url(#fg2)"/>
                 <defs>
-                  <linearGradient id="fireGrad2" x1="12" y1="2" x2="12" y2="18" gradientUnits="userSpaceOnUse">
+                  <linearGradient id="fg2" x1="12" y1="2" x2="12" y2="18" gradientUnits="userSpaceOnUse">
                     <stop offset="0%" stop-color="#ff6b35"/>
                     <stop offset="100%" stop-color="#ff1744"/>
                   </linearGradient>
@@ -453,7 +409,7 @@
             </div>
             <span class="brand-name">FireGuard</span>
           </div>
-          <p>IoT-powered fire detection system built on ESP32.</p>
+          <p>IoT fire detection — ESP32 + IR Sensor + Relay + Vercel</p>
         </div>
         <div class="footer-links">
           <a href="#dashboard">Dashboard</a>
@@ -463,30 +419,10 @@
         </div>
       </div>
       <div class="footer-bottom">
-        <span>© 2026 FireGuard. Built with ESP32 + ❤️</span>
+        <span>© 2026 FireGuard — Built with ESP32 + ❤️</span>
       </div>
     </div>
   </footer>
-
-  <!-- Config Modal -->
-  <div class="modal-overlay" id="configModal">
-    <div class="modal">
-      <div class="modal-header">
-        <h3>API Configuration</h3>
-        <button class="modal-close" id="modalClose">✕</button>
-      </div>
-      <div class="modal-body">
-        <label>ESP32 Base URL</label>
-        <input type="text" id="apiUrlInput" class="form-input" placeholder="http://192.168.x.x/api" />
-        <label>Poll Interval (seconds)</label>
-        <input type="number" id="pollInput" class="form-input" value="3" min="1" max="60" />
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" id="cancelConfig">Cancel</button>
-        <button class="btn btn-primary" id="saveConfig">Save & Reconnect</button>
-      </div>
-    </div>
-  </div>
 
   <!-- Toast -->
   <div class="toast" id="toast"></div>
