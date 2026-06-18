@@ -16,16 +16,15 @@
 
 #include <WiFi.h>
 #include <FirebaseESP32.h>
-#include <addons/TokenHelper.h>
-#include <addons/RTDBHelper.h>
 
 // ── WiFi ──────────────────────────────────────────────────────────────────────
 #define WIFI_SSID      "Diganth's A36"
 #define WIFI_PASSWORD  "diganth@098"
 
 // ── Firebase ──────────────────────────────────────────────────────────────────
-#define DATABASE_URL   "https://fireguard-dfb77-default-rtdb.firebaseio.com"
-#define DATABASE_SECRET ""   // leave empty — test mode (no auth needed)
+// Only the host — no https://, no trailing slash
+#define DATABASE_HOST  "fireguard-dfb77-default-rtdb.firebaseio.com"
+#define DATABASE_AUTH  ""   // empty = test mode (rules allow read/write)
 
 // ── Pins ──────────────────────────────────────────────────────────────────────
 const int flamePin  = 5;
@@ -82,15 +81,12 @@ void setup() {
   Serial.printf("\n[WiFi]    Connected! IP: %s\n",
                 WiFi.localIP().toString().c_str());
 
-  // ── Firebase ──
-  config.database_url              = DATABASE_URL;
-  config.signer.tokens.legacy_token = DATABASE_SECRET;
-
-  Firebase.begin(&config, &auth);
+  // ── Firebase ── legacy begin — works with all Mobizt library versions
+  Firebase.begin(DATABASE_HOST, DATABASE_AUTH);
   Firebase.reconnectWiFi(true);
   fbdo.setResponseSize(1024);
 
-  Serial.println("[Firebase] Initialised → " DATABASE_URL);
+  Serial.println("[Firebase] Initialised → " DATABASE_HOST);
   Serial.println("====================================");
 
   startTime = millis();
