@@ -21,7 +21,6 @@ export default async function handler(req, res) {
     try {
       const { default: fetch } = await import('node-fetch');
 
-      // Firebase REST API — just append .json to the path
       const url = `${firebaseUrl}/fireguard/sensors.json`;
       const response = await fetch(url, {
         signal: AbortSignal.timeout(5000),

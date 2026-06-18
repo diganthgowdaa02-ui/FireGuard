@@ -1,116 +1,128 @@
 /**
  * FireGuard ESP32 Firmware v6.0 — Firebase Edition
  *
+ * Firebase DB: https://fireguard-dfb77-default-rtdb.firebaseio.com
+ *
  * Pins:
  *   GPIO 5  → IR Flame Sensor DO  (LOW = fire)
  *   GPIO 23 → Relay IN            (LOW = ON, HIGH = OFF)
  *   GPIO 18 → Buzzer
  *   GPIO 2  → Onboard LED
  *
- * Pushes sensor data to Firebase Realtime Database every 2 seconds.
- * Dashboard reads from Firebase — works from anywhere in the world.
- *
- * Libraries needed (Arduino Library Manager):
- *   - ArduinoJson (v6)
- *   - Firebase ESP32 Client  (by Mobizt)
+ * Library needed in Arduino IDE (Library Manager):
+ *   → Firebase ESP32 Client  by Mobizt
+ *   → ArduinoJson            by Benoit Blanchon (v6)
  */
 
 #include <WiFi.h>
 #include <FirebaseESP32.h>
-#include <ArduinoJson.h>
+#include <addons/TokenHelper.h>
+#include <addons/RTDBHelper.h>
 
 // ── WiFi ──────────────────────────────────────────────────────────────────────
-#define WIFI_SSID     "Diganth's A36"
-#define WIFI_PASSWORD "diganth@098"
+#define WIFI_SSID      "Diganth's A36"
+#define WIFI_PASSWORD  "diganth@098"
 
 // ── Firebase ──────────────────────────────────────────────────────────────────
-// Paste your Firebase Realtime Database URL here (no trailing slash)
-#define FIREBASE_HOST "fireguard-xxxxx-default-rtdb.firebaseio.com"
-// Leave secret empty for test mode — or add your database secret here
-#define FIREBASE_AUTH ""
+#define DATABASE_URL   "https://fireguard-dfb77-default-rtdb.firebaseio.com"
+#define DATABASE_SECRET ""   // leave empty — test mode (no auth needed)
 
 // ── Pins ──────────────────────────────────────────────────────────────────────
 const int flamePin  = 5;
 const int relayPin  = 23;
 const int buzzerPin = 18;
-const int LED_PIN   = 2;
+const int ledPin    = 2;
 
 // ── Cooldown ──────────────────────────────────────────────────────────────────
-#define COOLDOWN_SEC 10
+#define COOLDOWN_SEC  10
 
 // ── State ─────────────────────────────────────────────────────────────────────
+FirebaseData   fbdo;
+FirebaseAuth   auth;
+FirebaseConfig config;
+
+bool          prevFlame       = false;
 bool          inCooldown      = false;
 unsigned long cooldownStart   = 0;
-bool          prevFlame       = false;
+bool          motorRunning    = false;
 int           flameEventCount = 0;
 unsigned long lastFlameTime   = 0;
 unsigned long startTime       = 0;
-bool          motorRunning    = false;
-unsigned long lastPushTime    = 0;
-
-FirebaseData   fbData;
-FirebaseConfig fbConfig;
-FirebaseAuth   fbAuth;
+unsigned long lastPushMillis  = 0;
 
 // ─────────────────────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n[FireGuard] Booting...");
+  Serial.println("\n========== FireGuard Boot ==========");
 
+  // ── Pins ──
   pinMode(flamePin,  INPUT);
   pinMode(relayPin,  OUTPUT);
   pinMode(buzzerPin, OUTPUT);
-  pinMode(LED_PIN,   OUTPUT);
+  pinMode(ledPin,    OUTPUT);
 
   digitalWrite(relayPin,  HIGH);  // relay OFF
   digitalWrite(buzzerPin, LOW);
-  digitalWrite(LED_PIN,   LOW);
+  digitalWrite(ledPin,    LOW);
+  Serial.println("[PINS]    relay=HIGH(OFF) buzzer=LOW(OFF)");
 
-  // WiFi
-  Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
+  // ── WiFi ──
+  Serial.printf("[WiFi]    Connecting to %s", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500); Serial.print(".");
+  int tries = 0;
+  while (WiFi.status() != WL_CONNECTED && tries < 40) {
+    delay(500); Serial.print("."); tries++;
   }
-  Serial.printf("\n[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\n[WiFi]    FAILED — restarting in 5s");
+    delay(5000);
+    ESP.restart();
+  }
+  Serial.printf("\n[WiFi]    Connected! IP: %s\n",
+                WiFi.localIP().toString().c_str());
 
-  // Firebase
-  fbConfig.host           = FIREBASE_HOST;
-  fbConfig.signer.tokens.legacy_token = FIREBASE_AUTH;
-  Firebase.begin(&fbConfig, &fbAuth);
+  // ── Firebase ──
+  config.database_url              = DATABASE_URL;
+  config.signer.tokens.legacy_token = DATABASE_SECRET;
+
+  Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
-  Serial.println("[Firebase] Connected!");
+  fbdo.setResponseSize(1024);
+
+  Serial.println("[Firebase] Initialised → " DATABASE_URL);
+  Serial.println("====================================");
 
   startTime = millis();
-  Serial.println("[FireGuard] Ready.");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 void loop() {
-  int  flameState = digitalRead(flamePin);
-  bool fireNow    = (flameState == LOW);
+  bool fireNow = (digitalRead(flamePin) == LOW);
 
-  // ── Relay + Buzzer control ──
+  // ── Relay / Buzzer logic ──────────────────────────────────────────────────
   if (fireNow) {
-    digitalWrite(relayPin,  LOW);
-    digitalWrite(buzzerPin, HIGH);
-    digitalWrite(LED_PIN,   HIGH);
+    // Fire detected
+    digitalWrite(relayPin,  LOW);    // pump ON
+    digitalWrite(buzzerPin, HIGH);   // buzzer ON
+    digitalWrite(ledPin,    HIGH);
     motorRunning = true;
 
     if (!prevFlame) {
       flameEventCount++;
       lastFlameTime = millis();
       inCooldown    = false;
-      Serial.println("[ALERT] FIRE! Pump ON.");
+      Serial.printf("[ALERT]   FIRE #%d — pump ON, buzzer ON\n", flameEventCount);
     }
     prevFlame = true;
 
   } else {
+    // No fire
     if (prevFlame) {
+      // Flame just disappeared → start cooldown
       inCooldown    = true;
       cooldownStart = millis();
-      Serial.printf("[INFO] Flame gone. Cooldown %ds.\n", COOLDOWN_SEC);
+      Serial.printf("[INFO]    Flame gone → cooldown %ds started\n", COOLDOWN_SEC);
     }
     prevFlame = false;
 
@@ -119,22 +131,24 @@ void loop() {
       if (elapsed >= COOLDOWN_SEC) {
         inCooldown   = false;
         motorRunning = false;
-        digitalWrite(relayPin,  HIGH);
-        digitalWrite(buzzerPin, LOW);
-        digitalWrite(LED_PIN,   LOW);
-        Serial.println("[INFO] Cooldown done. Pump OFF.");
+        digitalWrite(relayPin,  HIGH);   // pump OFF
+        digitalWrite(buzzerPin, LOW);    // buzzer OFF
+        digitalWrite(ledPin,    LOW);
+        Serial.println("[INFO]    Cooldown done — pump OFF");
       }
+      // else: keep pump running during cooldown
     } else {
+      // Safe, no cooldown
       digitalWrite(relayPin,  HIGH);
       digitalWrite(buzzerPin, LOW);
+      digitalWrite(ledPin,    WiFi.status() == WL_CONNECTED ? HIGH : LOW);
       motorRunning = false;
-      if (!inCooldown) digitalWrite(LED_PIN, WiFi.status() == WL_CONNECTED ? HIGH : LOW);
     }
   }
 
-  // ── Push to Firebase every 2 seconds ──
-  if (millis() - lastPushTime >= 2000) {
-    lastPushTime = millis();
+  // ── Push to Firebase every 2 seconds ─────────────────────────────────────
+  if (millis() - lastPushMillis >= 2000) {
+    lastPushMillis = millis();
 
     int cooldownLeft = 0;
     if (inCooldown) {
@@ -142,23 +156,28 @@ void loop() {
       cooldownLeft = max(0, COOLDOWN_SEC - (int)e);
     }
 
+    // Build JSON object
     FirebaseJson json;
-    json.set("flame",          fireNow);
-    json.set("pump_active",    motorRunning);
-    json.set("cooldown_left",  cooldownLeft);
-    json.set("flame_events",   flameEventCount);
-    json.set("alert_level",    fireNow ? 2 : (inCooldown ? 1 : 0));
-    json.set("uptime",         (int)((millis() - startTime) / 1000));
-    json.set("heap",           (int)(ESP.getFreeHeap() / 1024));
-    json.set("rssi",           (int)WiFi.RSSI());
-    json.set("timestamp",      (int)(millis()));
+    json.set("flame",         fireNow);
+    json.set("pump_active",   motorRunning);
+    json.set("cooldown_left", cooldownLeft);
+    json.set("flame_events",  flameEventCount);
+    json.set("alert_level",   fireNow ? 2 : (inCooldown ? 1 : 0));
+    json.set("uptime",        (int)((millis() - startTime) / 1000));
+    json.set("heap",          (int)(ESP.getFreeHeap() / 1024));
+    json.set("rssi",          (int)WiFi.RSSI());
+    json.set("timestamp",     (int)(millis() / 1000));
     if (lastFlameTime > 0)
       json.set("last_flame_sec", (int)((millis() - lastFlameTime) / 1000));
 
-    if (Firebase.updateNode(fbData, "/fireguard/sensors", json)) {
-      Serial.println("[Firebase] Data pushed OK");
+    // Push to /fireguard/sensors in the database
+    if (Firebase.updateNode(fbdo, "/fireguard/sensors", json)) {
+      Serial.printf("[Firebase] Pushed OK — flame=%s pump=%s\n",
+                    fireNow ? "YES" : "no",
+                    motorRunning ? "ON" : "off");
     } else {
-      Serial.printf("[Firebase] Push failed: %s\n", fbData.errorReason().c_str());
+      Serial.printf("[Firebase] Push FAILED: %s\n",
+                    fbdo.errorReason().c_str());
     }
   }
 
