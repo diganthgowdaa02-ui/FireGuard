@@ -1,27 +1,28 @@
 /**
- * FireGuard ESP32 Firmware
+ * FireGuard ESP32 Firmware v3.0
  *
- * Wiring:
- *   IR Flame Sensor DO  → GPIO 27  (LOW = flame)
- *   Relay Module IN     → GPIO 26
- *   Onboard LED         → GPIO 2
+ * Confirmed working pins (matched from your working test sketch):
+ *   IR Flame Sensor DO → GPIO 5   (LOW = flame detected)
+ *   Relay Module IN    → GPIO 23  (HIGH = relay OFF, LOW = relay ON)
+ *   Buzzer             → GPIO 18  (HIGH = ON)
+ *   Onboard LED        → GPIO 2
  *
- *   9V External Battery:
- *     Battery (+) → Relay COM
- *     Relay NO    → Motor (+)
- *     Battery (-) → Motor (-)
- *     (ESP32 GND and Battery GND must share a common ground)
- *
- * Relay type: most modules are ACTIVE LOW
- *   RELAY_ON  = LOW  → relay coil energised → NO closes → motor runs
- *   RELAY_OFF = HIGH → relay coil off       → NO open   → motor stops
- *
- *   If your relay is ACTIVE HIGH, flip RELAY_ON/RELAY_OFF below.
+ * 9V External Battery wiring:
+ *   Battery (+) → Relay COM
+ *   Relay NO    → Motor (+)
+ *   Battery (-) → Motor (-)
+ *   ESP32 GND   → Battery (-) ← shared ground required
  *
  * Behaviour:
- *   No flame  → relay OFF (motor stopped) — guaranteed even at boot
- *   Flame     → relay ON  (motor runs)
- *   Flame gone → 10 s cooldown → relay OFF
+ *   No flame  → relay HIGH (OFF), buzzer OFF, LED steady
+ *   Flame     → relay LOW (ON), buzzer ON, LED rapid flash
+ *   Flame gone → 10s cooldown → relay HIGH (OFF), buzzer OFF
+ *
+ * HTTP API (port 80):
+ *   GET /api/sensors → live status JSON
+ *   GET /api/status  → device health JSON
+ *
+ * Library needed: ArduinoJson v6 (Arduino Library Manager)
  */
 
 #include <WiFi.h>
@@ -32,22 +33,16 @@
 const char* WIFI_SSID     = "Diganth's A36";
 const char* WIFI_PASSWORD = "diganth@098";
 
-// ── Pins ──────────────────────────────────────────────────────────────────────
-#define FLAME_PIN         27
-#define RELAY_PIN         26
-#define LED_PIN           2
-
-// ── Relay polarity ────────────────────────────────────────────────────────────
-// Standard blue relay modules are ACTIVE LOW:
-//   IN = LOW  → relay ON  (coil energised, NO contact closes, motor runs)
-//   IN = HIGH → relay OFF (coil off,       NO contact open,  motor stops)
-#define RELAY_ON          LOW
-#define RELAY_OFF         HIGH
+// ── Pins (confirmed from working test sketch) ─────────────────────────────────
+const int FLAME_PIN  = 5;    // IR flame sensor DO
+const int RELAY_PIN  = 23;   // Relay IN  (active LOW module)
+const int BUZZER_PIN = 18;   // Buzzer
+const int LED_PIN    = 2;    // Onboard LED
 
 // ── Cooldown ──────────────────────────────────────────────────────────────────
-#define COOLDOWN_SEC      10     // Seconds motor keeps running after flame gone
+#define COOLDOWN_SEC  10     // Seconds pump/buzzer keep running after flame gone
 
-// ── Globals ───────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
 WebServer     server(80);
 
 bool          flameDetected   = false;
@@ -60,27 +55,21 @@ int           flameEventCount = 0;
 
 // ─────────────────────────────────────────────────────────────────────────────
 void setup() {
-  // ── Kill the relay FIRST — before Serial, before WiFi, before everything ──
-  // GPIO 26 floats LOW on boot which triggers an active-low relay.
-  // Pull it HIGH immediately using the internal pull-up, then set it as OUTPUT.
-  pinMode(RELAY_PIN, INPUT_PULLUP);     // internal pull-up drives pin HIGH → relay OFF
-  delay(10);                            // give the pull-up time to assert
-  pinMode(RELAY_PIN, OUTPUT);           // now switch to output...
-  digitalWrite(RELAY_PIN, RELAY_OFF);   // ...and hold it HIGH firmly
-
   Serial.begin(115200);
-  Serial.println("\n[FireGuard] Booting — relay forced OFF at pin level.");
+  Serial.println("\n[FireGuard] Booting...");
 
-  pinMode(FLAME_PIN, INPUT);
-  pinMode(LED_PIN,   OUTPUT);
-  digitalWrite(LED_PIN, LOW);
+  // Pins
+  pinMode(FLAME_PIN,  INPUT);
+  pinMode(RELAY_PIN,  OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(LED_PIN,    OUTPUT);
 
-  // Confirm relay is off
-  Serial.printf("[FireGuard] RELAY_PIN %d = %s (relay is OFF)\n",
-                RELAY_PIN, digitalRead(RELAY_PIN) == HIGH ? "HIGH" : "LOW");
+  // Safe defaults — relay OFF, buzzer OFF
+  digitalWrite(RELAY_PIN,  HIGH);  // HIGH = relay OFF (active LOW module)
+  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(LED_PIN,    LOW);
 
-  motorRunning = false;
-  inCooldown   = false;
+  Serial.println("[FireGuard] Relay OFF. Buzzer OFF. Ready.");
 
   connectWiFi();
 
@@ -92,101 +81,94 @@ void setup() {
   });
 
   server.begin();
-  Serial.println("[FireGuard] HTTP server ready.");
+  Serial.println("[FireGuard] HTTP server started.");
   startTime = millis();
 
-  blinkLED(3, 150);   // 3 blinks = system ready
+  blinkLED(3, 150);  // 3 blinks = ready
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 void loop() {
   server.handleClient();
   checkFlameAndRelay();
-  delay(50);
+  delay(500);  // same interval as your working sketch
 }
 
 // ── Core logic ────────────────────────────────────────────────────────────────
-// Debounce: flame must read consistently for 3 checks (~150ms) before acting.
-// This prevents IR noise or light flicker from falsely triggering the relay.
-static int  flameConfirmCount = 0;
-static bool confirmedFlame    = false;
-
 void checkFlameAndRelay() {
-  bool rawFlame = (digitalRead(FLAME_PIN) == LOW);
+  int flameState = digitalRead(FLAME_PIN);
+  bool flame = (flameState == LOW);  // LOW = flame detected (active low sensor)
 
-  // Simple debounce — require 3 consecutive LOW reads before confirming flame
-  if (rawFlame) {
-    if (flameConfirmCount < 3) flameConfirmCount++;
-  } else {
-    if (flameConfirmCount > 0) flameConfirmCount--;
-  }
-
-  bool flame = (flameConfirmCount >= 3);   // confirmed flame
-
-  // ── Rising edge: flame just appeared ──
-  if (flame && !flameDetected) {
-    flameEventCount++;
-    lastFlameTime = millis();
-    inCooldown    = false;   // discard any prior cooldown
-    Serial.printf("[ALERT] Flame detected! Event #%d\n", flameEventCount);
-    motorOn();
-  }
-
-  // ── Falling edge: flame just disappeared ──
-  if (!flame && flameDetected) {
-    inCooldown    = true;
-    cooldownStart = millis();
-    Serial.printf("[INFO]  Flame gone. Cooldown started (%d s).\n", COOLDOWN_SEC);
-  }
-
-  flameDetected = flame;
-
-  // ── Steady state ──
   if (flame) {
-    motorOn();                       // keep motor on while flame is present
-
-  } else if (inCooldown) {
-    unsigned long elapsed = (millis() - cooldownStart) / 1000;
-    if (elapsed >= COOLDOWN_SEC) {
-      inCooldown = false;
-      motorOff();
-      Serial.println("[INFO]  Cooldown complete. Motor OFF.");
+    // ── Flame present ──
+    if (!flameDetected) {
+      // Rising edge — new flame event
+      flameEventCount++;
+      lastFlameTime = millis();
+      inCooldown    = false;
+      Serial.printf("[ALERT] FIRE DETECTED! Event #%d — pump & buzzer ON.\n", flameEventCount);
+    } else {
+      Serial.println("[ALERT] Fire ongoing — pump & buzzer ON.");
     }
-    // else: motor stays on, nothing to do
+
+    flameDetected = true;
+    pumpOn();
 
   } else {
-    motorOff();                      // no flame, no cooldown → motor must be off
+    // ── No flame ──
+    Serial.println("[INFO]  No fire detected.");
+
+    if (flameDetected) {
+      // Falling edge — flame just went away, start cooldown
+      inCooldown    = true;
+      cooldownStart = millis();
+      Serial.printf("[INFO]  Flame gone. Cooldown started (%d s).\n", COOLDOWN_SEC);
+    }
+
+    flameDetected = false;
+
+    if (inCooldown) {
+      unsigned long elapsed = (millis() - cooldownStart) / 1000;
+      if (elapsed >= COOLDOWN_SEC) {
+        inCooldown = false;
+        pumpOff();
+        Serial.println("[INFO]  Cooldown done. Pump & buzzer OFF.");
+      } else {
+        Serial.printf("[INFO]  Cooldown: %lus / %ds remaining.\n",
+                      elapsed, COOLDOWN_SEC - (int)elapsed);
+        pumpOn();  // keep running during cooldown
+      }
+    } else {
+      pumpOff();
+    }
   }
 
   // ── LED ──
   if (flameDetected) {
-    digitalWrite(LED_PIN, (millis() / 200) % 2);   // rapid flash = active fire
+    digitalWrite(LED_PIN, (millis() / 200) % 2);  // fast flash = fire
   } else if (inCooldown) {
-    digitalWrite(LED_PIN, (millis() / 600) % 2);   // slow flash = cooldown
+    digitalWrite(LED_PIN, (millis() / 600) % 2);  // slow flash = cooldown
   } else {
-    // Steady ON if WiFi connected, slow blink if not
-    if (WiFi.status() == WL_CONNECTED) {
-      digitalWrite(LED_PIN, HIGH);
-    } else {
-      digitalWrite(LED_PIN, (millis() / 1000) % 2);
-    }
+    digitalWrite(LED_PIN, WiFi.status() == WL_CONNECTED ? HIGH : LOW);
   }
 }
 
-// ── Motor helpers ─────────────────────────────────────────────────────────────
-void motorOn() {
+// ── Pump + Buzzer helpers ─────────────────────────────────────────────────────
+void pumpOn() {
   if (!motorRunning) {
     motorRunning = true;
-    digitalWrite(RELAY_PIN, RELAY_ON);
-    Serial.println("[MOTOR] ON  — relay energised, 9V circuit closed.");
+    digitalWrite(RELAY_PIN,  LOW);   // LOW = relay ON (active LOW module)
+    digitalWrite(BUZZER_PIN, HIGH);
+    Serial.println("[PUMP]  ON");
   }
 }
 
-void motorOff() {
+void pumpOff() {
   if (motorRunning) {
     motorRunning = false;
-    digitalWrite(RELAY_PIN, RELAY_OFF);
-    Serial.println("[MOTOR] OFF — relay de-energised, 9V circuit open.");
+    digitalWrite(RELAY_PIN,  HIGH);  // HIGH = relay OFF
+    digitalWrite(BUZZER_PIN, LOW);
+    Serial.println("[PUMP]  OFF");
   }
 }
 
@@ -205,23 +187,24 @@ void connectWiFi() {
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("\n[WiFi]  Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-    Serial.printf("[WiFi]  API: http://%s/api/sensors\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[WiFi]  API: http://%s/api/sensors\n",
+                  WiFi.localIP().toString().c_str());
   } else {
-    Serial.println("\n[WiFi]  Failed. Running offline — relay logic still works.");
+    Serial.println("\n[WiFi]  Failed. Relay logic still works offline.");
   }
 }
 
-// ── HTTP: GET / ───────────────────────────────────────────────────────────────
+// ── GET / ─────────────────────────────────────────────────────────────────────
 void handleRoot() {
   addCORSHeaders();
   server.send(200, "text/plain",
-    "FireGuard API v2\n"
+    "FireGuard API v3\n"
     "  GET /api/sensors\n"
     "  GET /api/status\n"
   );
 }
 
-// ── HTTP: GET /api/sensors ────────────────────────────────────────────────────
+// ── GET /api/sensors ──────────────────────────────────────────────────────────
 void handleSensors() {
   addCORSHeaders();
 
@@ -230,7 +213,7 @@ void handleSensors() {
   int cooldownLeft = 0;
   if (inCooldown && cooldownStart > 0) {
     unsigned long elapsed = (millis() - cooldownStart) / 1000;
-    cooldownLeft = max(0, (int)COOLDOWN_SEC - (int)elapsed);
+    cooldownLeft = max(0, COOLDOWN_SEC - (int)elapsed);
   }
 
   StaticJsonDocument<256> doc;
@@ -252,13 +235,13 @@ void handleSensors() {
   server.send(200, "application/json", json);
 }
 
-// ── HTTP: GET /api/status ─────────────────────────────────────────────────────
+// ── GET /api/status ───────────────────────────────────────────────────────────
 void handleStatus() {
   addCORSHeaders();
 
   StaticJsonDocument<200> doc;
   doc["device"]   = "FireGuard-ESP32";
-  doc["firmware"] = "2.2.0";
+  doc["firmware"] = "3.0.0";
   doc["ip"]       = WiFi.localIP().toString();
   doc["rssi"]     = WiFi.RSSI();
   doc["uptime"]   = (millis() - startTime) / 1000;
