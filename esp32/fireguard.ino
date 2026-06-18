@@ -23,7 +23,6 @@
 
 // ── Firebase ──────────────────────────────────────────────────────────────────
 #define DATABASE_URL   "https://fireguard-dfb77-default-rtdb.firebaseio.com"
-#define DATABASE_AUTH  ""   // empty = test mode rules
 
 // ── Pins ──────────────────────────────────────────────────────────────────────
 const int flamePin  = 5;
@@ -83,13 +82,26 @@ void setup() {
 
   // ── Firebase (v4.x API) ──
   config.database_url = DATABASE_URL;
-  config.signer.tokens.legacy_token = DATABASE_AUTH;
+
+  // Anonymous sign-in for test mode database
+  auth.user.email    = "";
+  auth.user.password = "";
 
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
   fbdo.setResponseSize(2048);
 
-  Serial.println("[Firebase] Ready → " DATABASE_URL);
+  // Wait for Firebase to be ready (max 10 seconds)
+  Serial.print("[Firebase] Connecting");
+  unsigned long fbStart = millis();
+  while (!Firebase.ready() && millis() - fbStart < 10000) {
+    delay(300); Serial.print(".");
+  }
+  if (Firebase.ready()) {
+    Serial.println("\n[Firebase] Ready! → " DATABASE_URL);
+  } else {
+    Serial.println("\n[Firebase] Timeout — will retry in loop");
+  }
   Serial.println("====================================");
 
   startTime = millis();
