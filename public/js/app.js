@@ -4,10 +4,11 @@
  */
 
 const state = {
-  prevFlame:    false,
-  prevPump:     false,
-  alertLevel:   'connecting',
-  logItems:     [],
+  prevFlame:        false,
+  prevPump:         false,
+  alertLevel:       'connecting',
+  logItems:         [],
+  lastDataReceived: 0,    // browser Date.now() when we last got data from Firebase
 };
 
 const $   = id => document.getElementById(id);
@@ -30,6 +31,9 @@ async function poll() {
 
 // ── Main update ───────────────────────────────────────────────────────────────
 function update(data) {
+  // Stamp the moment we received real data in the browser
+  state.lastDataReceived = Date.now();
+
   const { flame, pump_active: pump, cooldown_left: cooldown = 0,
           flame_events: events = 0, uptime = 0, rssi = 0, heap = 0 } = data;
 
@@ -134,10 +138,11 @@ function update(data) {
   }
 
   // ── Device card ──
-  const timeSincePush = data.timestamp
-    ? Math.floor(Date.now() / 1000) - data.timestamp
+  // Use browser-side timing — ESP32 timestamp is uptime (not Unix time)
+  const ageSec = state.lastDataReceived > 0
+    ? Math.floor((Date.now() - state.lastDataReceived) / 1000)
     : 999;
-  const isLive = timeSincePush < 10;  // pushed within last 10 seconds
+  const isLive = ageSec < 8;  // data arrived within last 8 seconds
 
   const cDevice = $('cardDevice');
   if (isLive) {
@@ -146,18 +151,18 @@ function update(data) {
     $('deviceBig').className   = 'card-big ' + (rssi > -70 ? 'green' : rssi > -85 ? 'yellow' : 'red');
     $('deviceBadge').textContent = 'LIVE';
     $('deviceBadge').className   = 'card-badge live';
-    set('deviceDesc', `Heap: ${heap} KB · Last push: ${timeSincePush}s ago`);
+    set('deviceDesc', `Heap: ${heap} KB · Last push: ${ageSec}s ago`);
   } else {
     cDevice.className = 'card';
     $('deviceBig').textContent = 'STALE';
     $('deviceBig').className   = 'card-big yellow';
     $('deviceBadge').textContent = 'DELAYED';
     $('deviceBadge').className   = 'card-badge warning';
-    set('deviceDesc', `Last seen: ${timeSincePush}s ago · Check device`);
+    set('deviceDesc', `Last seen: ${ageSec}s ago · Check device`);
   }
 
   // ── Live indicator dot in nav ──
-  updateLiveBar(isLive, timeSincePush, uptime, rssi, heap);
+  updateLiveBar(isLive, ageSec, uptime, rssi, heap);
 
   // ── Log new events ──
   if (flame && !state.prevFlame) {
