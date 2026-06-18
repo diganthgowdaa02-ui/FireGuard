@@ -1,285 +1,208 @@
 /**
- * FireGuard — Main Application (Vercel build)
- * IR Flame Sensor + Relay Water Pump
+ * FireGuard — Dashboard App
+ * Clean, values-first UI
  */
 
 const state = {
-  alerts:            [],
-  pollTimer:         null,
-  currentAlertLevel: 'safe',
-  lastFlameState:    false,
-  lastPumpState:     false,
+  prevFlame:    false,
+  prevPump:     false,
+  alertLevel:   'connecting',
+  logItems:     [],
 };
 
-const $       = id => document.getElementById(id);
-const setText = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+const $   = id => document.getElementById(id);
+const set = (id, v) => { const e = $(id); if (e) e.textContent = v; };
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  Charts.init();
-  startPolling();
-  setupNavigation();
-  setupControls();
-  addStartupAlert();
+  poll();
+  setInterval(poll, CONFIG.POLL_INTERVAL);
+  $('clearBtn').addEventListener('click', clearLog);
+  addLog('info', 'System started', 'Dashboard connected. Waiting for ESP32 data.');
 });
 
-// ── Polling ───────────────────────────────────────────────────────────────────
-function startPolling() {
-  poll();
-  state.pollTimer = setInterval(poll, CONFIG.POLL_INTERVAL);
-}
-
+// ── Poll ──────────────────────────────────────────────────────────────────────
 async function poll() {
   const data = await fetchSensorData();
-  if (!data) { updateDeviceOffline(); return; }
-  updateDashboard(data);
-  updateDeviceStatus(data);
+  if (!data) { setOffline(); return; }
+  update(data);
 }
 
-// ── Dashboard ─────────────────────────────────────────────────────────────────
-function updateDashboard(data) {
-  const { flame, pump_active: pump, cooldown_left: cooldown = 0, flame_events: events = 0 } = data;
+// ── Main update ───────────────────────────────────────────────────────────────
+function update(data) {
+  const { flame, pump_active: pump, cooldown_left: cooldown = 0,
+          flame_events: events = 0, uptime = 0, rssi = 0, heap = 0 } = data;
 
-  setText('lastUpdated', new Date().toLocaleTimeString());
+  // ── Timestamp ──
+  set('lastUpdated', new Date().toLocaleTimeString());
 
-  // Flame card
-  $('cardFlame').className     = `sensor-card${flame ? ' alert-state' : ''}`;
-  $('flameValue').textContent  = flame ? 'FLAME!' : 'SAFE';
-  $('flameValue').className    = `card-value flame-value${flame ? ' flame-active' : ''}`;
-  $('flameStatus').textContent = flame ? 'FLAME DETECTED' : 'No Flame';
-  $('flameStatus').className   = `card-status ${flame ? 'danger' : 'safe'}`;
-  $('flameRing').className     = `flame-ring${flame ? ' active' : ''}`;
-  $('flameDot').className      = `flame-dot${flame ? ' active' : ''}`;
-  $('flameDesc').textContent   = flame
-    ? '⚠️ Open flame detected! Water pump activated.'
-    : 'No flame radiation detected by IR sensor';
-  setText('flameEvents', events);
-
-  // Pump card
+  // ── Big status card ──
+  const card = $('statusCard');
   if (flame) {
-    $('cardPump').className    = 'sensor-card pump-active-state';
-    $('pumpValue').textContent = 'PUMPING';
-    $('pumpValue').className   = 'card-value pump-value pump-on';
-    $('pumpStatus').textContent= 'ACTIVE';
-    $('pumpStatus').className  = 'card-status danger';
-    $('pumpRing').className    = 'pump-ring active';
-    $('pumpDesc').textContent  = '💧 Dispensing water — extinguishing fire!';
+    card.className = 'status-card danger';
+    set('statusEmoji', '🔥');
+    set('statusTitle', 'FIRE DETECTED');
+    set('statusSub',   'IR flame sensor triggered — water pump activated');
   } else if (pump) {
-    $('cardPump').className    = 'sensor-card pump-cooldown-state';
-    $('pumpValue').textContent = 'COOLDOWN';
-    $('pumpValue').className   = 'card-value pump-value pump-cooldown';
-    $('pumpStatus').textContent= 'Cooldown';
-    $('pumpStatus').className  = 'card-status warning';
-    $('pumpRing').className    = 'pump-ring cooldown';
-    $('pumpDesc').textContent  = `💧 Flame gone. Pump running for ${cooldown}s more.`;
+    card.className = 'status-card warning';
+    set('statusEmoji', '💧');
+    set('statusTitle', 'Extinguishing...');
+    set('statusSub',   `Pump running. Cooldown: ${cooldown}s remaining`);
   } else {
-    $('cardPump').className    = 'sensor-card';
-    $('pumpValue').textContent = 'OFF';
-    $('pumpValue').className   = 'card-value pump-value';
-    $('pumpStatus').textContent= 'Standby';
-    $('pumpStatus').className  = 'card-status safe';
-    $('pumpRing').className    = 'pump-ring';
-    $('pumpDesc').textContent  = 'Pump is on standby. No fire detected.';
-  }
-  setText('cooldownLeft', cooldown > 0 ? cooldown + 's' : '0s');
-  setText('pumpState',    pump ? 'ACTIVE' : 'OFF');
-  setText('buzzerState',  pump ? 'ACTIVE' : 'STANDBY');
-
-  // Hero
-  setText('heroFlame',   flame ? '🔥' : 'SAFE');
-  setText('heroPump',    pump  ? 'ON'  : 'OFF');
-  setText('screenFlame', flame ? '🔥 FLAME!' : 'No Flame');
-  setText('screenPump',  pump  ? '💧 ACTIVE' : 'Pump OFF');
-  setText('screenRssi',  (data.rssi || '--') + ' dBm');
-
-  // Mini chart
-  Charts.pushData(flame);
-
-  // Alert level transitions
-  const level = flame ? 'danger' : pump ? 'warning' : 'safe';
-  if (level !== state.currentAlertLevel) {
-    state.currentAlertLevel = level;
-    updateStatusBanner(level, flame, pump, cooldown);
-    updateNavStatus(level);
+    card.className = 'status-card safe';
+    set('statusEmoji', '🛡️');
+    set('statusTitle', 'All Clear');
+    set('statusSub',   'No flame detected. System monitoring normally.');
   }
 
-  // Log each new flame event
-  if (flame && !state.lastFlameState) {
-    addAlert('danger');
-    sendBrowserNotification('🔥 Fire Detected!', 'IR flame sensor triggered. Water pump activated.');
-  }
-
-  state.lastFlameState = flame;
-  state.lastPumpState  = pump;
-}
-
-// ── Banner ────────────────────────────────────────────────────────────────────
-function updateStatusBanner(level, flame, pump, cooldown) {
-  const banner = $('statusBanner');
-  banner.className = `status-banner ${level}`;
-  const icon = banner.querySelector('.status-icon');
-
-  if (level === 'danger') {
-    icon.textContent = '🚨';
-    setText('bannerTitle',   'FIRE ALERT — Water Pump Activated!');
-    setText('bannerMessage', 'IR sensor triggered. Relay closed. Pump dispensing water.');
-    $('dismissBtn').style.display = 'block';
-  } else if (level === 'warning') {
-    icon.textContent = '⚠️';
-    setText('bannerTitle',   'Fire Extinguished — Cooldown Running');
-    setText('bannerMessage', `Flame gone. Pump runs ${cooldown}s more to fully extinguish.`);
-    $('dismissBtn').style.display = 'block';
+  // ── Nav pill ──
+  const dot  = $('pillDot');
+  const pill = $('pillText');
+  if (flame) {
+    dot.className  = 'pill-dot danger';
+    pill.textContent = '🔥 FIRE';
+  } else if (pump) {
+    dot.className  = 'pill-dot warning';
+    pill.textContent = '💧 Pump Active';
   } else {
-    icon.textContent = '✅';
-    setText('bannerTitle',   'All Systems Normal');
-    setText('bannerMessage', 'No flame detected. Relay off. Monitoring active.');
-    $('dismissBtn').style.display = 'none';
+    dot.className  = 'pill-dot safe';
+    pill.textContent = 'System Safe';
   }
-}
 
-function updateNavStatus(level) {
-  const dot = $('navStatusDot'), label = $('navStatusLabel');
-  if (dot)   dot.className   = `status-dot ${level}`;
-  if (label) label.textContent = level === 'danger' ? '🚨 FIRE ALERT'
-    : level === 'warning' ? '💧 Pump Active' : 'System Safe';
-}
+  // ── Quick stats ──
+  const flameVal = $('valFlame');
+  flameVal.textContent = flame ? '🔥 YES' : 'NO';
+  flameVal.className   = 'stat-val ' + (flame ? 'red' : 'green');
 
-// ── Device Status ─────────────────────────────────────────────────────────────
-function updateDeviceStatus(data) {
-  const badge = $('esp32Status'), resp = $('lastResponse');
-  if (badge) { badge.textContent = 'ONLINE'; badge.className = 'device-badge online'; }
-  if (resp)  { resp.textContent  = '200 OK'; resp.style.color = 'var(--safe-green)'; }
-  if (data) {
-    const u = data.uptime || 0;
-    setText('deviceUptime', `${Math.floor(u/3600)}h ${Math.floor((u%3600)/60)}m ${u%60}s`);
-    setText('heroUptime',   `${Math.floor(u/3600)}h ${Math.floor((u%3600)/60)}m`);
-    setText('freeHeap',     (data.heap || '--') + ' KB');
-    setText('flamePing',    (5 + Math.floor(Math.random() * 10)) + ' ms');
+  const pumpVal = $('valPump');
+  pumpVal.textContent = pump ? 'ON' : 'OFF';
+  pumpVal.className   = 'stat-val ' + (pump ? 'yellow' : 'green');
+
+  set('valEvents', events);
+
+  const u = uptime;
+  set('valUptime', `${Math.floor(u/3600)}h${Math.floor((u%3600)/60)}m`);
+  set('valRssi', rssi + ' dBm');
+
+  // ── Flame sensor card ──
+  const cFlame   = $('cardFlame');
+  const flameBig = $('flameBig');
+  const flameBadge = $('flameBadge');
+
+  if (flame) {
+    cFlame.className       = 'card danger';
+    flameBig.textContent   = 'FLAME!';
+    flameBig.className     = 'card-big red';
+    flameBadge.textContent = 'ALERT';
+    flameBadge.className   = 'card-badge danger';
+    set('flameDesc', '⚠️ Open flame detected by IR sensor');
+  } else {
+    cFlame.className       = 'card';
+    flameBig.textContent   = 'NO FLAME';
+    flameBig.className     = 'card-big green';
+    flameBadge.textContent = 'SAFE';
+    flameBadge.className   = 'card-badge safe';
+    set('flameDesc', 'No infrared radiation detected');
   }
+
+  // ── Pump card ──
+  const cPump   = $('cardPump');
+  const pumpBig = $('pumpBig');
+  const pumpBadge = $('pumpBadge');
+
+  if (flame) {
+    cPump.className       = 'card danger';
+    pumpBig.textContent   = 'PUMPING';
+    pumpBig.className     = 'card-big red';
+    pumpBadge.textContent = 'ACTIVE';
+    pumpBadge.className   = 'card-badge danger';
+    set('pumpDesc', '💧 Dispensing water — extinguishing fire!');
+  } else if (pump) {
+    cPump.className       = 'card active';
+    pumpBig.textContent   = 'COOLDOWN';
+    pumpBig.className     = 'card-big yellow';
+    pumpBadge.textContent = 'COOLDOWN';
+    pumpBadge.className   = 'card-badge warning';
+    set('pumpDesc', `Flame gone. Pump runs ${cooldown}s more.`);
+  } else {
+    cPump.className       = 'card';
+    pumpBig.textContent   = 'OFF';
+    pumpBig.className     = 'card-big green';
+    pumpBadge.textContent = 'STANDBY';
+    pumpBadge.className   = 'card-badge safe';
+    set('pumpDesc', 'Pump is off. No fire detected.');
+  }
+
+  // ── Device card ──
+  $('deviceBig').textContent = rssi + ' dBm';
+  $('deviceBig').className   = 'card-big ' + (rssi > -70 ? 'green' : rssi > -85 ? 'yellow' : 'red');
+  set('deviceDesc', `Heap: ${heap} KB · Uptime: ${Math.floor(u/60)}m`);
+  $('deviceBadge').textContent = 'ONLINE';
+  $('deviceBadge').className   = 'card-badge safe';
+
+  // ── Log new events ──
+  if (flame && !state.prevFlame) {
+    addLog('danger', '🔥 Fire Detected — Pump Activated',
+           'IR sensor triggered. Relay closed. Water pump running.');
+    toast('🔥 Fire detected! Pump ON', 'danger');
+  }
+  if (!flame && !pump && state.prevPump) {
+    addLog('info', '✅ System Back to Normal',
+           'Flame extinguished. Pump off. All clear.');
+    toast('✅ All clear — pump off', 'success');
+  }
+
+  state.prevFlame  = flame;
+  state.prevPump   = pump;
 }
 
-function updateDeviceOffline() {
-  const badge = $('esp32Status'), resp = $('lastResponse');
-  if (badge) { badge.textContent = 'OFFLINE'; badge.className = 'device-badge offline'; }
-  if (resp)  { resp.textContent  = 'No response'; resp.style.color = 'var(--danger-red)'; }
+// ── Offline ───────────────────────────────────────────────────────────────────
+function setOffline() {
+  $('statusCard').className = 'status-card';
+  set('statusEmoji', '⚠️');
+  set('statusTitle', 'No Connection');
+  set('statusSub',   'Cannot reach ESP32. Check device and network.');
+  $('pillDot').className = 'pill-dot';
+  set('pillText', 'Offline');
+  $('deviceBadge').textContent = 'OFFLINE';
+  $('deviceBadge').className   = 'card-badge danger';
 }
 
-// ── Alert Log ─────────────────────────────────────────────────────────────────
-function addAlert(level) {
-  const log = $('alertLog'), empty = $('alertEmpty');
+// ── Log ───────────────────────────────────────────────────────────────────────
+function addLog(type, title, detail) {
+  const box   = $('logBox');
+  const empty = $('logEmpty');
   if (empty) empty.style.display = 'none';
 
   const el = document.createElement('div');
-  el.className = `alert-item ${level === 'danger' ? 'danger-alert' : 'warning-alert'}`;
-  el.dataset.id = Date.now();
+  el.className = `log-item ${type}`;
   el.innerHTML = `
-    <span class="alert-time">${new Date().toLocaleTimeString()}</span>
-    <div class="alert-body">
-      <strong>${level === 'danger' ? '🚨 Fire Detected — Pump Activated' : '💧 Cooldown Running'}</strong>
-      <span>${level === 'danger'
-        ? 'IR sensor triggered. Relay closed. Water pump dispensing.'
-        : 'Flame extinguished. Pump running cooldown.'}</span>
+    <span class="log-time">${new Date().toLocaleTimeString()}</span>
+    <div class="log-msg">
+      <strong>${title}</strong>
+      <span>${detail}</span>
     </div>
-    <span class="alert-badge ${level === 'danger' ? 'badge-danger' : 'badge-warning'}">${level.toUpperCase()}</span>
+    <span class="log-tag ${type}">${type.toUpperCase()}</span>
   `;
-  log.insertBefore(el, log.firstChild);
-  showToast(level === 'danger' ? '🚨 Fire detected! Pump ON' : '💧 Cooldown active');
+  box.insertBefore(el, box.firstChild);
+
+  // Keep max 50 entries
+  const items = box.querySelectorAll('.log-item');
+  if (items.length > 50) items[items.length - 1].remove();
 }
 
-function addStartupAlert() {
-  const log = $('alertLog'), empty = $('alertEmpty');
-  if (empty) empty.style.display = 'none';
-  const el = document.createElement('div');
-  el.className = 'alert-item info-alert';
-  el.innerHTML = `
-    <span class="alert-time">${new Date().toLocaleTimeString()}</span>
-    <div class="alert-body">
-      <strong>FireGuard system started</strong>
-      <span>IR flame sensor monitoring. Relay on standby. Dashboard live.</span>
-    </div>
-    <span class="alert-badge badge-info">INFO</span>
-  `;
-  log.insertBefore(el, log.firstChild);
+function clearLog() {
+  const box = $('logBox');
+  box.querySelectorAll('.log-item').forEach(i => i.remove());
+  $('logEmpty').style.display = 'flex';
+  toast('Log cleared', 'success');
 }
-
-// ── Browser Push Notifications ────────────────────────────────────────────────
-window.enablePushNotifications = async function () {
-  if (!('Notification' in window)) {
-    showToast('Browser notifications not supported', 'error');
-    return;
-  }
-  const perm = await Notification.requestPermission();
-  const el = $('pushStatus'), btn = $('enablePushBtn');
-  if (perm === 'granted') {
-    if (el)  el.textContent = '✅ Notifications enabled';
-    if (btn) btn.textContent = 'Enabled ✓';
-    showToast('Browser notifications enabled ✓', 'success');
-  } else {
-    if (el) el.textContent = '❌ Permission denied';
-    showToast('Permission denied', 'error');
-  }
-};
-
-function sendBrowserNotification(title, body) {
-  if (Notification.permission === 'granted') {
-    new Notification(title, { body, icon: '/favicon.ico' });
-  }
-}
-
-// ── Navigation ────────────────────────────────────────────────────────────────
-function setupNavigation() {
-  const burger   = $('hamburger');
-  const navLinks = document.querySelector('.nav-links');
-  if (burger && navLinks) {
-    burger.addEventListener('click', () => navLinks.classList.toggle('open'));
-    navLinks.querySelectorAll('a').forEach(a =>
-      a.addEventListener('click', () => navLinks.classList.remove('open'))
-    );
-  }
-  const sections = document.querySelectorAll('section[id]');
-  window.addEventListener('scroll', () => {
-    let cur = '';
-    sections.forEach(s => { if (window.scrollY >= s.offsetTop - 100) cur = s.id; });
-    document.querySelectorAll('.nav-links a').forEach(a => {
-      a.style.color = a.getAttribute('href') === '#' + cur ? 'var(--accent-orange)' : '';
-    });
-  }, { passive: true });
-}
-
-// ── Controls ──────────────────────────────────────────────────────────────────
-function setupControls() {
-  $('dismissBtn').addEventListener('click', () => {
-    state.currentAlertLevel = 'safe';
-    updateStatusBanner('safe', false, false, 0);
-    updateNavStatus('safe');
-  });
-  $('clearAlertsBtn').addEventListener('click', () => {
-    $('alertLog').querySelectorAll('.alert-item').forEach(i => i.remove());
-    $('alertEmpty').style.display = 'block';
-    state.alerts = [];
-    showToast('Alert log cleared', 'success');
-  });
-  $('testConnectionBtn').addEventListener('click', async () => {
-    showToast('Testing…');
-    const d = await fetchSensorData();
-    showToast(d ? `Connected ✓ ${d.mock ? '(demo mode)' : '(live ESP32)'}` : 'Connection failed', d ? 'success' : 'error');
-  });
-}
-
-window.saveNotification = function (type) {
-  const val = type === 'email' ? $('emailInput').value : $('phoneInput').value;
-  if (!val) { showToast('Please enter a value', 'error'); return; }
-  localStorage.setItem(`fg_${type}`, val);
-  showToast(`${type === 'email' ? 'Email' : 'Phone'} saved ✓`, 'success');
-};
-
-window.saveThresholds = () => showToast('Saved ✓', 'success');
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
-function showToast(msg, type = '') {
+function toast(msg, type = '') {
   const t = $('toast');
   t.textContent = msg;
   t.className = `toast show ${type}`;
   clearTimeout(t._t);
-  t._t = setTimeout(() => t.classList.remove('show'), 3200);
+  t._t = setTimeout(() => t.classList.remove('show'), 3000);
 }

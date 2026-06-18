@@ -3,432 +3,215 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FireGuard — IoT Fire Detection System</title>
-  <link rel="stylesheet" href="css/style.css" />
+  <title>FireGuard — Live Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
 
-  <!-- Navigation -->
-  <nav class="navbar" id="navbar">
-    <div class="nav-container">
-      <div class="nav-brand">
-        <div class="brand-icon">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2C8 6 6 9 6 12a6 6 0 0012 0c0-3-2-6-6-10z" fill="url(#fireGrad)"/>
-            <path d="M12 8c-1 2-2 3.5-2 5a2 2 0 004 0c0-1.5-1-3-2-5z" fill="#fff" opacity="0.6"/>
-            <defs>
-              <linearGradient id="fireGrad" x1="12" y1="2" x2="12" y2="18" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stop-color="#ff6b35"/>
-                <stop offset="100%" stop-color="#ff1744"/>
-              </linearGradient>
-            </defs>
-          </svg>
-        </div>
-        <span class="brand-name">FireGuard</span>
+  <!-- ── NAVBAR ── -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <div class="nav-logo">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C8 6 6 9 6 12a6 6 0 0012 0c0-3-2-6-6-10z" fill="url(#fg)"/>
+          <defs>
+            <linearGradient id="fg" x1="12" y1="2" x2="12" y2="18" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#f97316"/>
+              <stop offset="100%" stop-color="#ef4444"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span>FireGuard</span>
       </div>
-      <ul class="nav-links">
-        <li><a href="#dashboard">Dashboard</a></li>
-        <li><a href="#alerts">Alerts</a></li>
-        <li><a href="#devices">Devices</a></li>
-        <li><a href="#notifications">Notifications</a></li>
-        <li><a href="#how-it-works">How It Works</a></li>
-      </ul>
-      <div class="nav-status">
-        <span class="status-dot safe" id="navStatusDot"></span>
-        <span class="status-label" id="navStatusLabel">System Safe</span>
+      <div class="nav-links">
+        <a href="#status">Status</a>
+        <a href="#sensors">Sensors</a>
+        <a href="#log">Log</a>
+        <a href="#about">About</a>
       </div>
-      <button class="hamburger" id="hamburger" aria-label="Toggle menu">
-        <span></span><span></span><span></span>
-      </button>
+      <div class="nav-pill" id="navPill">
+        <span class="pill-dot" id="pillDot"></span>
+        <span id="pillText">Connecting...</span>
+      </div>
     </div>
   </nav>
 
-  <!-- Demo Mode Banner -->
-  <div class="demo-banner" id="demoBanner">
-    🎭 Demo Mode — Not connected to real ESP32. Set <code>ESP32_URL</code> in Vercel env vars to go live.
-    <button onclick="document.getElementById('demoBanner').style.display='none'">✕</button>
-  </div>
+  <!-- ── HERO STATUS ── -->
+  <section class="hero" id="status">
+    <div class="wrap">
 
-  <!-- Hero -->
-  <section class="hero" id="home">
-    <div class="hero-bg">
-      <div class="particle" style="--x:10%;--y:20%;--d:3s"></div>
-      <div class="particle" style="--x:80%;--y:60%;--d:4s"></div>
-      <div class="particle" style="--x:50%;--y:80%;--d:2.5s"></div>
-      <div class="particle" style="--x:30%;--y:40%;--d:5s"></div>
-      <div class="particle" style="--x:70%;--y:25%;--d:3.5s"></div>
-    </div>
-    <div class="hero-content">
-      <div class="hero-badge">
-        <span class="pulse-ring"></span>
-        <span>ESP32-Powered IoT System</span>
-      </div>
-      <h1 class="hero-title">
-        Protect What <span class="gradient-text">Matters Most</span>
-      </h1>
-      <p class="hero-subtitle">
-        Real-time fire detection powered by ESP32 + IR flame sensor.
-        Relay triggers water pump automatically when fire is detected.
-      </p>
-      <div class="hero-actions">
-        <a href="#dashboard" class="btn btn-primary">View Dashboard</a>
-        <a href="#how-it-works" class="btn btn-outline">How It Works</a>
-      </div>
-      <div class="hero-stats">
-        <div class="stat">
-          <span class="stat-value" id="heroFlame">SAFE</span>
-          <span class="stat-label">Flame</span>
+      <!-- Big status card -->
+      <div class="status-card" id="statusCard">
+        <div class="status-icon-wrap" id="statusIconWrap">
+          <span class="status-emoji" id="statusEmoji">🛡️</span>
         </div>
-        <div class="stat-divider"></div>
-        <div class="stat">
-          <span class="stat-value" id="heroPump">OFF</span>
-          <span class="stat-label">Pump</span>
-        </div>
-        <div class="stat-divider"></div>
-        <div class="stat">
-          <span class="stat-value" id="heroUptime">--</span>
-          <span class="stat-label">Uptime</span>
-        </div>
-      </div>
-    </div>
-    <div class="hero-visual">
-      <div class="device-mockup">
-        <div class="device-screen">
-          <div class="screen-header">
-            <span>LIVE</span>
-            <span class="live-dot"></span>
-          </div>
-          <div class="mini-chart" id="miniChart"></div>
-          <div class="screen-readings">
-            <div class="reading">
-              <span class="reading-icon">🔥</span>
-              <span id="screenFlame">No Flame</span>
-            </div>
-            <div class="reading">
-              <span class="reading-icon">💧</span>
-              <span id="screenPump">Pump OFF</span>
-            </div>
-            <div class="reading">
-              <span class="reading-icon">📡</span>
-              <span id="screenRssi">-- dBm</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Dashboard -->
-  <section class="section" id="dashboard">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title">Live Sensor Dashboard</h2>
-        <p class="section-subtitle">Real-time readings from your ESP32</p>
-        <div class="last-updated">Last updated: <span id="lastUpdated">--:--:--</span></div>
-      </div>
-
-      <div class="status-banner safe" id="statusBanner">
-        <div class="status-icon">✅</div>
         <div class="status-text">
-          <strong id="bannerTitle">All Systems Normal</strong>
-          <span id="bannerMessage">No flame detected. Relay off. System monitoring.</span>
+          <h1 class="status-title" id="statusTitle">Connecting...</h1>
+          <p class="status-sub" id="statusSub">Waiting for ESP32 sensor data</p>
         </div>
-        <button class="dismiss-btn" id="dismissBtn" style="display:none">✕</button>
+        <div class="status-time">
+          Updated <span id="lastUpdated">--:--:--</span>
+        </div>
       </div>
 
-      <div class="sensor-grid two-col">
-        <!-- Flame Card -->
-        <div class="sensor-card" id="cardFlame">
-          <div class="card-header">
+      <!-- Quick stats row -->
+      <div class="stats-row">
+        <div class="stat-box" id="statFlame">
+          <div class="stat-label">Flame</div>
+          <div class="stat-val" id="valFlame">--</div>
+        </div>
+        <div class="stat-box" id="statPump">
+          <div class="stat-label">Pump</div>
+          <div class="stat-val" id="valPump">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Events</div>
+          <div class="stat-val" id="valEvents">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Uptime</div>
+          <div class="stat-val" id="valUptime">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Signal</div>
+          <div class="stat-val" id="valRssi">--</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── SENSOR CARDS ── -->
+  <section class="section" id="sensors">
+    <div class="wrap">
+      <h2 class="sec-title">Live Sensors</h2>
+      <div class="cards">
+
+        <!-- Flame card -->
+        <div class="card" id="cardFlame">
+          <div class="card-top">
             <div class="card-icon">🔥</div>
-            <div class="card-meta">
-              <span class="card-title">IR Flame Sensor</span>
-              <span class="card-status safe" id="flameStatus">No Flame</span>
-            </div>
+            <span class="card-badge safe" id="flameBadge">SAFE</span>
           </div>
-          <div class="card-value flame-value" id="flameValue">SAFE</div>
-          <div class="flame-indicator">
-            <div class="flame-ring" id="flameRing"></div>
-            <div class="flame-dot" id="flameDot"></div>
-          </div>
-          <div class="flame-desc" id="flameDesc">No flame radiation detected by IR sensor</div>
-          <div class="card-footer-stat">
-            <span>Total Fire Events</span>
-            <span class="stat-num" id="flameEvents">0</span>
-          </div>
+          <div class="card-name">IR Flame Sensor</div>
+          <div class="card-big" id="flameBig">NO FLAME</div>
+          <div class="card-desc" id="flameDesc">No infrared radiation detected</div>
+          <div class="card-footer">GPIO 5 · Digital</div>
         </div>
 
-        <!-- Pump Card -->
-        <div class="sensor-card" id="cardPump">
-          <div class="card-header">
+        <!-- Pump card -->
+        <div class="card" id="cardPump">
+          <div class="card-top">
             <div class="card-icon">💧</div>
-            <div class="card-meta">
-              <span class="card-title">Relay — Water Pump</span>
-              <span class="card-status safe" id="pumpStatus">Standby</span>
-            </div>
+            <span class="card-badge safe" id="pumpBadge">STANDBY</span>
           </div>
-          <div class="card-value pump-value" id="pumpValue">OFF</div>
-          <div class="pump-indicator">
-            <div class="pump-ring" id="pumpRing"></div>
-            <div class="pump-icon-inner">💧</div>
+          <div class="card-name">Relay · Water Pump</div>
+          <div class="card-big" id="pumpBig">OFF</div>
+          <div class="card-desc" id="pumpDesc">Pump is off. No fire detected.</div>
+          <div class="card-footer">GPIO 23 · 9V Battery</div>
+        </div>
+
+        <!-- Device card -->
+        <div class="card" id="cardDevice">
+          <div class="card-top">
+            <div class="card-icon">📡</div>
+            <span class="card-badge safe" id="deviceBadge">ONLINE</span>
           </div>
-          <div class="flame-desc" id="pumpDesc">Pump is on standby. No fire detected.</div>
-          <div class="card-footer-stat">
-            <span>Cooldown Left</span>
-            <span class="stat-num" id="cooldownLeft">0s</span>
+          <div class="card-name">ESP32 Device</div>
+          <div class="card-big" id="deviceBig">--</div>
+          <div class="card-desc" id="deviceDesc">Heap: -- KB · RSSI: -- dBm</div>
+          <div class="card-footer">FireGuard v7.0</div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ALERT LOG ── -->
+  <section class="section alt" id="log">
+    <div class="wrap">
+      <div class="sec-row">
+        <h2 class="sec-title">Alert Log</h2>
+        <button class="btn-clear" id="clearBtn">Clear</button>
+      </div>
+      <div class="log-box" id="logBox">
+        <div class="log-empty" id="logEmpty">
+          <span>🛡️</span>
+          <p>No alerts yet. System is safe.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ABOUT ── -->
+  <section class="section" id="about">
+    <div class="wrap">
+      <h2 class="sec-title">How It Works</h2>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-icon">🔥</div>
+          <div class="flow-label">IR Sensor detects flame</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-icon">⚡</div>
+          <div class="flow-label">ESP32 triggers relay</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-icon">💧</div>
+          <div class="flow-label">Water pump activates</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-icon">☁️</div>
+          <div class="flow-label">Firebase receives data</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-icon">🖥️</div>
+          <div class="flow-label">Dashboard updates live</div>
+        </div>
+      </div>
+      <div class="wiring">
+        <h3>Wiring</h3>
+        <div class="wire-table">
+          <div class="wire-row header">
+            <span>Component</span><span>ESP32 Pin</span><span>Note</span>
+          </div>
+          <div class="wire-row">
+            <span>IR Flame Sensor DO</span><span>GPIO 5</span><span>LOW = fire</span>
+          </div>
+          <div class="wire-row">
+            <span>Relay Module IN</span><span>GPIO 23</span><span>LOW = ON</span>
+          </div>
+          <div class="wire-row">
+            <span>Buzzer (+)</span><span>GPIO 18</span><span>HIGH = ON</span>
+          </div>
+          <div class="wire-row">
+            <span>9V Battery (+)</span><span>Relay COM</span><span>Motor circuit</span>
+          </div>
+          <div class="wire-row">
+            <span>Relay NO</span><span>Motor (+)</span><span>Normally open</span>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Alert Log -->
-  <section class="section section-dark" id="alerts">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title">Alert History</h2>
-        <p class="section-subtitle">Log of all fire detection events</p>
-        <button class="btn btn-sm btn-outline" id="clearAlertsBtn">Clear Log</button>
-      </div>
-      <div class="alert-log" id="alertLog">
-        <div class="alert-empty" id="alertEmpty">
-          <span class="empty-icon">🛡️</span>
-          <p>No alerts recorded. System is operating normally.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Device Status -->
-  <section class="section" id="devices">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title">Device Status</h2>
-        <p class="section-subtitle">ESP32 hardware health and connectivity</p>
-      </div>
-      <div class="device-grid">
-        <div class="device-card">
-          <div class="device-header">
-            <div class="device-icon">📡</div>
-            <div>
-              <h3>ESP32 Main Unit</h3>
-              <span class="device-id">ID: FG-ESP32-001</span>
-            </div>
-            <span class="device-badge online" id="esp32Status">ONLINE</span>
-          </div>
-          <div class="device-details">
-            <div class="detail-row"><span>IP Address</span><code id="deviceIP">--</code></div>
-            <div class="detail-row">
-              <span>WiFi Signal</span>
-              <span class="signal-bars" id="wifiSignal">
-                <span class="bar active"></span>
-                <span class="bar active"></span>
-                <span class="bar active"></span>
-                <span class="bar"></span>
-              </span>
-            </div>
-            <div class="detail-row"><span>Firmware</span><code>v2.1.4</code></div>
-            <div class="detail-row"><span>Uptime</span><span id="deviceUptime">--</span></div>
-            <div class="detail-row"><span>Free Heap</span><span id="freeHeap">-- KB</span></div>
-          </div>
-        </div>
-
-        <div class="device-card">
-          <div class="device-header">
-            <div class="device-icon">🔬</div>
-            <div>
-              <h3>Components</h3>
-              <span class="device-id">2 active</span>
-            </div>
-            <span class="device-badge online">HEALTHY</span>
-          </div>
-          <div class="sensor-list">
-            <div class="sensor-item">
-              <span class="sensor-dot active"></span>
-              <span>IR Flame Sensor (GPIO 27)</span>
-              <span class="sensor-ping" id="flamePing">-- ms</span>
-            </div>
-            <div class="sensor-item">
-              <span class="sensor-dot active"></span>
-              <span>Relay Module (GPIO 26)</span>
-              <span class="active-label" id="buzzerState">STANDBY</span>
-            </div>
-            <div class="sensor-item">
-              <span class="sensor-dot active"></span>
-              <span>Water Pump (Relay NO)</span>
-              <span class="active-label" id="pumpState">OFF</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="device-card">
-          <div class="device-header">
-            <div class="device-icon">⚙️</div>
-            <div>
-              <h3>API Configuration</h3>
-              <span class="device-id">Vercel serverless proxy</span>
-            </div>
-          </div>
-          <div class="device-details">
-            <div class="detail-row"><span>Endpoint</span><code>/api/sensors</code></div>
-            <div class="detail-row"><span>Poll Interval</span><code id="pollInterval">2s</code></div>
-            <div class="detail-row"><span>ESP32 URL</span><code id="apiUrl">via ENV var</code></div>
-            <div class="detail-row"><span>Last Response</span><span id="lastResponse" class="text-green">200 OK</span></div>
-          </div>
-          <div class="config-actions">
-            <button class="btn btn-sm btn-primary" id="testConnectionBtn">Test Connection</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Notifications -->
-  <section class="section section-dark" id="notifications">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title">Alert Notifications</h2>
-        <p class="section-subtitle">Get notified the moment fire is detected</p>
-      </div>
-      <div class="notification-grid">
-        <div class="notif-card">
-          <div class="notif-icon">📧</div>
-          <h3>Email Alerts</h3>
-          <p>Receive instant alerts to your inbox when flame is detected.</p>
-          <div class="notif-form">
-            <input type="email" placeholder="your@email.com" id="emailInput" class="form-input" />
-            <label class="toggle-label">
-              <input type="checkbox" class="toggle-input" id="emailToggle" checked />
-              <span class="toggle-switch"></span>
-              <span>Enabled</span>
-            </label>
-          </div>
-          <button class="btn btn-primary btn-full" onclick="saveNotification('email')">Save Email</button>
-        </div>
-        <div class="notif-card">
-          <div class="notif-icon">📱</div>
-          <h3>SMS Alerts</h3>
-          <p>Get text messages when fire events are detected.</p>
-          <div class="notif-form">
-            <input type="tel" placeholder="+91 XXXXX XXXXX" id="phoneInput" class="form-input" />
-            <label class="toggle-label">
-              <input type="checkbox" class="toggle-input" id="smsToggle" />
-              <span class="toggle-switch"></span>
-              <span>Disabled</span>
-            </label>
-          </div>
-          <button class="btn btn-primary btn-full" onclick="saveNotification('sms')">Save Phone</button>
-        </div>
-        <div class="notif-card">
-          <div class="notif-icon">🔔</div>
-          <h3>Browser Notifications</h3>
-          <p>Enable push notifications directly in your browser.</p>
-          <div class="notif-form" style="margin-top:1rem">
-            <button class="btn btn-outline btn-full" id="enablePushBtn" onclick="enablePushNotifications()">Enable Notifications</button>
-          </div>
-          <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.75rem" id="pushStatus">Not enabled</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- How It Works -->
-  <section class="section" id="how-it-works">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title">How It Works</h2>
-        <p class="section-subtitle">From sensor to extinguishment in milliseconds</p>
-      </div>
-      <div class="steps-grid">
-        <div class="step-card">
-          <div class="step-number">01</div>
-          <div class="step-icon">🔥</div>
-          <h3>Flame Detected</h3>
-          <p>IR flame sensor detects infrared radiation from open fire. Digital output goes LOW instantly.</p>
-        </div>
-        <div class="step-arrow">→</div>
-        <div class="step-card">
-          <div class="step-number">02</div>
-          <div class="step-icon">⚡</div>
-          <h3>ESP32 Reacts</h3>
-          <p>ESP32 reads the pin and drives the relay HIGH — no cloud round-trip. Reaction is under 50ms.</p>
-        </div>
-        <div class="step-arrow">→</div>
-        <div class="step-card">
-          <div class="step-number">03</div>
-          <div class="step-icon">💧</div>
-          <h3>Pump Activates</h3>
-          <p>Relay closes, water pump runs. Continues for 10s after flame gone to fully extinguish.</p>
-        </div>
-        <div class="step-arrow">→</div>
-        <div class="step-card">
-          <div class="step-number">04</div>
-          <div class="step-icon">🌐</div>
-          <h3>Dashboard Updates</h3>
-          <p>ESP32 sends status to Vercel API proxy every 2s. Dashboard updates live from anywhere in the world.</p>
-        </div>
-      </div>
-
-      <div class="architecture-box">
-        <h3>System Architecture</h3>
-        <div class="arch-diagram">
-          <div class="arch-node"><div class="arch-icon">🔥</div><span>IR Flame Sensor</span></div>
-          <div class="arch-line"></div>
-          <div class="arch-node highlight"><div class="arch-icon">⚡</div><span>ESP32</span></div>
-          <div class="arch-line"></div>
-          <div class="arch-node"><div class="arch-icon">🔌</div><span>Relay</span></div>
-          <div class="arch-line"></div>
-          <div class="arch-node highlight"><div class="arch-icon">💧</div><span>Water Pump</span></div>
-          <div class="arch-line"></div>
-          <div class="arch-node"><div class="arch-icon">☁️</div><span>Vercel API</span></div>
-          <div class="arch-line"></div>
-          <div class="arch-node highlight"><div class="arch-icon">🖥️</div><span>Dashboard</span></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Footer -->
+  <!-- ── FOOTER ── -->
   <footer class="footer">
-    <div class="container">
-      <div class="footer-content">
-        <div class="footer-brand">
-          <div class="nav-brand">
-            <div class="brand-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2C8 6 6 9 6 12a6 6 0 0012 0c0-3-2-6-6-10z" fill="url(#fg2)"/>
-                <defs>
-                  <linearGradient id="fg2" x1="12" y1="2" x2="12" y2="18" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stop-color="#ff6b35"/>
-                    <stop offset="100%" stop-color="#ff1744"/>
-                  </linearGradient>
-                </defs>
-              </svg>
-            </div>
-            <span class="brand-name">FireGuard</span>
-          </div>
-          <p>IoT fire detection — ESP32 + IR Sensor + Relay + Vercel</p>
-        </div>
-        <div class="footer-links">
-          <a href="#dashboard">Dashboard</a>
-          <a href="#alerts">Alerts</a>
-          <a href="#devices">Devices</a>
-          <a href="#how-it-works">How It Works</a>
-        </div>
-      </div>
-      <div class="footer-bottom">
-        <span>© 2026 FireGuard — Built with ESP32 + ❤️</span>
-      </div>
+    <div class="wrap">
+      <span>© 2026 FireGuard · ESP32 + IR Sensor + Relay + Firebase + Vercel</span>
     </div>
   </footer>
 
-  <!-- Toast -->
+  <!-- ── TOAST ── -->
   <div class="toast" id="toast"></div>
 
   <script src="js/data.js"></script>
-  <script src="js/charts.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
