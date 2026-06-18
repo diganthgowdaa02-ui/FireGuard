@@ -314,6 +314,24 @@ void loop() {
   }
 
   delay(200);
+
+  // ── Print to Serial Monitor every 2 seconds ──
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint >= 2000) {
+    lastPrint = millis();
+    unsigned long uptime = (millis() - startTime) / 1000;
+    Serial.println("─────────────────────────────");
+    Serial.printf("  Flame    : %s\n",   fireNow      ? "🔥 DETECTED" : "✅ None");
+    Serial.printf("  Pump     : %s\n",   motorRunning ? "ON (active)" : "OFF");
+    Serial.printf("  Cooldown : %ds\n",  inCooldown   ? (int)(COOLDOWN_SEC - (millis()-cooldownStart)/1000) : 0);
+    Serial.printf("  Events   : %d\n",   flameEventCount);
+    Serial.printf("  Uptime   : %luh %lum %lus\n",
+                  uptime/3600, (uptime%3600)/60, uptime%60);
+    Serial.printf("  WiFi     : %d dBm\n", WiFi.RSSI());
+    Serial.printf("  Heap     : %d KB\n",  ESP.getFreeHeap()/1024);
+    Serial.printf("  IP       : %s\n",   WiFi.localIP().toString().c_str());
+    Serial.println("─────────────────────────────");
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
