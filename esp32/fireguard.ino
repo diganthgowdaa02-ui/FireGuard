@@ -1,5 +1,8 @@
 /**
- * FireGuard ESP32 Firmware v6.1 — Firebase Edition
+ * FireGuard ESP32 Firmware v7.0 — Firebase REST API (no library needed)
+ *
+ * Uses HTTPClient to POST directly to Firebase REST API.
+ * No Firebase library required — just WiFi + HTTPClient (built into ESP32).
  *
  * Firebase DB: fireguard-dfb77-default-rtdb.firebaseio.com
  *
@@ -9,20 +12,20 @@
  *   GPIO 18 → Buzzer
  *   GPIO 2  → Onboard LED
  *
- * Libraries needed (Arduino Library Manager):
- *   - Firebase ESP32 Client  by Mobizt  (v4.x)
- *   - ArduinoJson            by Benoit Blanchon (v6)
+ * No extra libraries needed — HTTPClient and WiFi are built into ESP32 core.
  */
 
 #include <WiFi.h>
-#include <FirebaseESP32.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 
 // ── WiFi ──────────────────────────────────────────────────────────────────────
 #define WIFI_SSID      "Diganth's A36"
 #define WIFI_PASSWORD  "diganth@098"
 
-// ── Firebase ──────────────────────────────────────────────────────────────────
-#define DATABASE_URL   "https://fireguard-dfb77-default-rtdb.firebaseio.com"
+// ── Firebase REST endpoint ────────────────────────────────────────────────────
+// Format: https://<project>-default-rtdb.firebaseio.com/<path>.json
+#define FIREBASE_URL   "https://fireguard-dfb77-default-rtdb.firebaseio.com/fireguard/sensors.json"
 
 // ── Pins ──────────────────────────────────────────────────────────────────────
 const int flamePin  = 5;
@@ -32,11 +35,6 @@ const int ledPin    = 2;
 
 // ── Cooldown ──────────────────────────────────────────────────────────────────
 #define COOLDOWN_SEC  10
-
-// ── Firebase objects ──────────────────────────────────────────────────────────
-FirebaseData   fbdo;
-FirebaseAuth   auth;
-FirebaseConfig config;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 bool          prevFlame       = false;
@@ -54,7 +52,6 @@ void setup() {
   delay(500);
   Serial.println("\n========== FireGuard Boot ==========");
 
-  // ── Pins ──
   pinMode(flamePin,  INPUT);
   pinMode(relayPin,  OUTPUT);
   pinMode(buzzerPin, OUTPUT);
@@ -63,45 +60,16 @@ void setup() {
   digitalWrite(relayPin,  HIGH);
   digitalWrite(buzzerPin, LOW);
   digitalWrite(ledPin,    LOW);
-  Serial.println("[PINS]    Relay OFF, Buzzer OFF");
 
-  // ── WiFi ──
-  Serial.printf("[WiFi]    Connecting to %s", WIFI_SSID);
+  // WiFi
+  Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  int tries = 0;
-  while (WiFi.status() != WL_CONNECTED && tries < 40) {
-    delay(500); Serial.print("."); tries++;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500); Serial.print(".");
   }
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\n[WiFi]    FAILED — restarting...");
-    delay(3000);
-    ESP.restart();
-  }
-  Serial.printf("\n[WiFi]    Connected! IP: %s\n",
+  Serial.printf("\n[WiFi] Connected! IP: %s\n",
                 WiFi.localIP().toString().c_str());
-
-  // ── Firebase (v4.x API) ──
-  config.database_url = DATABASE_URL;
-
-  // Anonymous sign-in for test mode database
-  auth.user.email    = "";
-  auth.user.password = "";
-
-  Firebase.begin(&config, &auth);
-  Firebase.reconnectWiFi(true);
-  fbdo.setResponseSize(2048);
-
-  // Wait for Firebase to be ready (max 10 seconds)
-  Serial.print("[Firebase] Connecting");
-  unsigned long fbStart = millis();
-  while (!Firebase.ready() && millis() - fbStart < 10000) {
-    delay(300); Serial.print(".");
-  }
-  if (Firebase.ready()) {
-    Serial.println("\n[Firebase] Ready! → " DATABASE_URL);
-  } else {
-    Serial.println("\n[Firebase] Timeout — will retry in loop");
-  }
+  Serial.println("[FireGuard] Ready — pushing to Firebase via REST");
   Serial.println("====================================");
 
   startTime = millis();
@@ -122,7 +90,7 @@ void loop() {
       flameEventCount++;
       lastFlameTime = millis();
       inCooldown    = false;
-      Serial.printf("[ALERT]   FIRE #%d — Pump ON\n", flameEventCount);
+      Serial.printf("[ALERT] FIRE #%d — Pump ON\n", flameEventCount);
     }
     prevFlame = true;
 
@@ -130,7 +98,7 @@ void loop() {
     if (prevFlame) {
       inCooldown    = true;
       cooldownStart = millis();
-      Serial.printf("[INFO]    Flame gone — cooldown %ds\n", COOLDOWN_SEC);
+      Serial.printf("[INFO]  Flame gone — cooldown %ds\n", COOLDOWN_SEC);
     }
     prevFlame = false;
 
@@ -142,51 +110,73 @@ void loop() {
         digitalWrite(relayPin,  HIGH);
         digitalWrite(buzzerPin, LOW);
         digitalWrite(ledPin,    LOW);
-        Serial.println("[INFO]    Cooldown done — Pump OFF");
+        Serial.println("[INFO]  Cooldown done — Pump OFF");
       }
     } else {
       digitalWrite(relayPin,  HIGH);
       digitalWrite(buzzerPin, LOW);
-      digitalWrite(ledPin,    WiFi.status() == WL_CONNECTED ? HIGH : LOW);
+      digitalWrite(ledPin,    HIGH);
       motorRunning = false;
     }
   }
 
-  // ── Push to Firebase every 2 seconds ─────────────────────────────────────
+  // ── Push to Firebase every 2 seconds via REST API ─────────────────────────
   if (millis() - lastPushMillis >= 2000) {
     lastPushMillis = millis();
-
-    if (Firebase.ready()) {
-      int cooldownLeft = 0;
-      if (inCooldown) {
-        unsigned long e = (millis() - cooldownStart) / 1000;
-        cooldownLeft = max(0, COOLDOWN_SEC - (int)e);
-      }
-
-      FirebaseJson json;
-      json.set("flame",          fireNow);
-      json.set("pump_active",    motorRunning);
-      json.set("cooldown_left",  cooldownLeft);
-      json.set("flame_events",   flameEventCount);
-      json.set("alert_level",    fireNow ? 2 : (inCooldown ? 1 : 0));
-      json.set("uptime",         (int)((millis() - startTime) / 1000));
-      json.set("heap",           (int)(ESP.getFreeHeap() / 1024));
-      json.set("rssi",           (int)WiFi.RSSI());
-      json.set("timestamp",      (int)(millis() / 1000));
-      if (lastFlameTime > 0)
-        json.set("last_flame_sec", (int)((millis() - lastFlameTime) / 1000));
-
-      if (Firebase.updateNode(fbdo, "/fireguard/sensors", json)) {
-        Serial.printf("[Firebase] OK — flame=%s pump=%s\n",
-                      fireNow ? "YES" : "no",
-                      motorRunning ? "ON" : "off");
-      } else {
-        Serial.printf("[Firebase] FAIL: %s\n", fbdo.errorReason().c_str());
-      }
-    } else {
-      Serial.println("[Firebase] Not ready yet...");
-    }
+    pushToFirebase(fireNow);
   }
 
   delay(500);
+}
+
+// ── Firebase REST push ────────────────────────────────────────────────────────
+void pushToFirebase(bool fireNow) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Firebase] WiFi not connected — skipping push");
+    return;
+  }
+
+  int cooldownLeft = 0;
+  if (inCooldown) {
+    unsigned long e = (millis() - cooldownStart) / 1000;
+    cooldownLeft = max(0, COOLDOWN_SEC - (int)e);
+  }
+
+  // Build JSON manually — no library needed
+  String json = "{";
+  json += "\"flame\":"         + String(fireNow ? "true" : "false") + ",";
+  json += "\"pump_active\":"   + String(motorRunning ? "true" : "false") + ",";
+  json += "\"cooldown_left\":" + String(cooldownLeft) + ",";
+  json += "\"flame_events\":"  + String(flameEventCount) + ",";
+  json += "\"alert_level\":"   + String(fireNow ? 2 : (inCooldown ? 1 : 0)) + ",";
+  json += "\"uptime\":"        + String((millis() - startTime) / 1000) + ",";
+  json += "\"heap\":"          + String(ESP.getFreeHeap() / 1024) + ",";
+  json += "\"rssi\":"          + String(WiFi.RSSI()) + ",";
+  json += "\"timestamp\":"     + String(millis() / 1000);
+  if (lastFlameTime > 0) {
+    json += ",\"last_flame_sec\":" + String((millis() - lastFlameTime) / 1000);
+  }
+  json += "}";
+
+  // Use PATCH (not PUT) so we update fields without overwriting the whole node
+  WiFiClientSecure client;
+  client.setInsecure();   // skip SSL cert verification (fine for IoT)
+
+  HTTPClient http;
+  http.begin(client, FIREBASE_URL);
+  http.addHeader("Content-Type", "application/json");
+
+  // Firebase REST uses PATCH to update specific fields
+  int httpCode = http.sendRequest("PATCH", json);
+
+  if (httpCode == 200) {
+    Serial.printf("[Firebase] OK — flame=%s pump=%s\n",
+                  fireNow ? "YES" : "no",
+                  motorRunning ? "ON" : "off");
+  } else {
+    Serial.printf("[Firebase] FAIL — HTTP %d: %s\n",
+                  httpCode, http.getString().c_str());
+  }
+
+  http.end();
 }
